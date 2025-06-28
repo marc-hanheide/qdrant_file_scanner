@@ -149,7 +149,7 @@ class FileMonitor:
             level=log_level,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(log_file),
+                logging.FileHandler(log_file, mode='w', encoding='utf-8'),
                 logging.StreamHandler(sys.stdout)
             ]
         )

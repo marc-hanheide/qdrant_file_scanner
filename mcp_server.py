@@ -66,7 +66,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     log_file = logging_config.get('mcp_logfile', 'mcp_rag_server.log')
     
     # Create file handler with explicit settings
-    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
     file_handler.setLevel(log_level)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     
@@ -86,7 +86,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     
     try:
         # Initialize embedding manager
-        embedding_manager = EmbeddingManager(config, slim_mode=True)
+        embedding_manager = EmbeddingManager(config, slim_mode=False)
         logger.info("RAG system initialized successfully")
         
         yield {
@@ -114,7 +114,7 @@ def rag_search(
     """
     Search for relevant documents in the RAG database.
     
-    This tool searches through indexed documents using semantic similarity
+    This tool searches through indexed documents on this conputer using semantic similarity
     to find the most relevant content chunks for a given query.
     
     Args:
@@ -184,6 +184,7 @@ def get_rag_config() -> str:
     
     config_summary = {
         "qdrant": config.get("qdrant", {}),
+        "mcp": __file__,
         "embedding": config.get("embedding", {}),
         "directories": config.get("directories", []),
         "file_extensions": config.get("file_extensions", [])
@@ -204,9 +205,10 @@ def get_database_stats() -> str:
             collection_name=embedding_manager.collection_name
         )
         
+        
         stats = {
             "collection_name": embedding_manager.collection_name,
-            "total_vectors": collection_info.vectors_count if hasattr(collection_info, 'vectors_count') else "Unknown",
+            "collection_status": str(collection_info.status),
             "vector_size": embedding_manager.vector_size,
             "embedding_model": embedding_manager.model_name,
             "indexed_files": len(embedding_manager.file_hashes)
@@ -216,6 +218,136 @@ def get_database_stats() -> str:
         
     except Exception as e:
         return f"Error retrieving database statistics: {str(e)}"
+
+
+@mcp.prompt()
+def find_files_about(topic: str) -> str:
+    """Find specific files about a particular topic or content.
+    
+    This prompt helps locate relevant documents that can be opened directly.
+    Use this when you need to find files containing specific information.
+    
+    Args:
+        topic: What you're looking for (e.g., "machine learning papers", "budget reports", "meeting notes")
+    """
+    return f"""I need to find files about "{topic}". Please use the rag_search tool to search for relevant documents. 
+
+After finding the results:
+1. List the most relevant files with their paths
+2. If the files exist and are accessible, offer to open or read specific ones
+3. Provide file:// links for files that can be opened directly
+4. Summarize what types of content were found
+
+Search query: {topic}"""
+
+
+@mcp.prompt()
+def summarize_documents_about(topic: str, file_pattern: str = None) -> str:
+    """Summarize information from multiple local documents about a specific topic.
+    
+    This prompt helps gather and synthesize information from various sources.
+    Use this when you need a comprehensive overview from multiple documents available locally, 
+    or when requested by the user specifically.
+    
+    Args:
+        topic: The subject to summarize (e.g., "quarterly financial performance", "project status updates")
+        file_pattern: Optional glob pattern to filter specific file types or locations
+    """
+    pattern_instruction = f"\nUse glob pattern: {file_pattern}" if file_pattern else ""
+    
+    return f"""I need a comprehensive summary about "{topic}" from available documents.{pattern_instruction}
+
+Please follow this process:
+1. First, use rag_search to find relevant documents about "{topic}"
+2. Identify the most relevant and recent documents
+3. For key documents, read their full content to get complete context if that is required
+4. Synthesize the information into a structured summary covering:
+   - Key findings or main points
+   - Important dates and timelines
+   - Relevant numbers, statistics, or metrics
+   - Action items or next steps (if applicable)
+   - Sources used (with file paths)
+
+Search query: {topic}"""
+
+
+@mcp.prompt()
+def find_emails_about(subject_or_content: str, date_range: str = None) -> str:
+    """Find specific emails based on subject or content.
+    
+    This prompt helps locate emails which are stored as HTML files in OneDrive.
+    Use this when you need to find email communications about specific topics.
+    
+    Args:
+        subject_or_content: What to search for in emails (subject line or content)
+        date_range: Optional date range (e.g., "last month", "2024", "January 2025")
+    """
+    email_pattern = "*/OneDrive-UniversityofLincoln/Emails/*/*.html"
+    date_instruction = f" from {date_range}" if date_range else ""
+    
+    return f"""I need to find emails about "{subject_or_content}"{date_instruction}.
+
+Please search for emails using these steps:
+1. Use rag_search with glob_pattern="{email_pattern}" to find relevant emails
+2. Look for emails matching the subject or containing the specified content
+3. Present the results showing:
+   - Email subject/title (from filename or content)
+   - Date information (if available)
+   - Sender/recipient information (if found in content)
+   - Brief preview of relevant content
+   - Full file path for reference
+
+Search in: /Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails
+File type: all stoared email files end in `.html`
+Search query: {subject_or_content}"""
+
+
+@mcp.prompt()
+def comprehensive_search(query: str, search_strategy: str = "broad") -> str:
+    """Perform a comprehensive search across all available documents.
+    
+    This prompt provides a flexible search strategy that adapts based on the type of information needed.
+    Use this for complex queries that might require multiple search approaches.
+    
+    Args:
+        query: The search query or question
+        search_strategy: Search approach - "broad" (cast wide net), "focused" (specific results), or "deep" (detailed analysis)
+    """
+    if search_strategy == "focused":
+        strategy_instruction = """
+Use a focused search approach:
+1. Search with specific keywords
+2. Limit results to most relevant matches
+3. Provide precise, targeted information"""
+    elif search_strategy == "deep":
+        strategy_instruction = """
+Use a deep analysis approach:
+1. Search broadly first to identify relevant documents
+2. Read full content of key documents
+3. Cross-reference information across sources
+4. Provide detailed analysis with citations"""
+    else:  # broad
+        strategy_instruction = """
+Use a broad search approach:
+1. Search with multiple keyword variations
+2. Include different file types and locations
+3. Cast a wide net to capture all relevant information"""
+    
+    return f"""I need to search for information about: "{query}"
+
+Search Strategy: {search_strategy}
+{strategy_instruction}
+
+Please help me find and organize information by:
+1. Using rag_search with appropriate keywords and patterns
+2. Identifying the most relevant documents
+3. Organizing results by relevance and type
+4. Providing actionable next steps or direct links where possible
+
+For emails, remember to use the pattern: */OneDrive-UniversityofLincoln/Emails/*/*.html
+For specific file types, use appropriate glob patterns
+
+Search query: {query}"""
 
 
 def main():

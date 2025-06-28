@@ -1,7 +1,9 @@
 directories:
+  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Attachments"
+  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails"
   - "/Users/mhanheide/Downloads"
   - "/Users/mhanheide/Desktop"
-  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails"
+  
   # Add more directories as needed
 
 # File extensions to process
@@ -52,3 +54,4 @@ memory:
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   file: "rag_monitor.log"
+  mcp_logfile: "/tmp/mcp_server.log"
