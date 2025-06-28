@@ -40,12 +40,12 @@ processing:
 
 # Memory optimization settings
 memory:
-  chunk_batch_size: 25  # Process document chunks in batches
-  hash_loading_batch_size: 100  # Load file hashes in batches
+  chunk_batch_size: 50  # Process document chunks in batches
+  hash_loading_batch_size: 1000  # Load file hashes in batches
   unload_model_after_idle_minutes: 30  # Unload embedding model after idle time
   force_gc_after_operations: 100  # Force garbage collection after N operations
 
 # Logging
 logging:
-  level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   file: "rag_monitor.log"
