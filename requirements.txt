@@ -16,3 +16,4 @@ click>=8.1.0
 tqdm>=4.66.0
 libmagic>=0.4
 psutil>=7.0.0
+mcp[cli]>=1.10.0

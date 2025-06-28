@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""
+MCP Server for RAG Document Search
+
+This server provides access to the RAG document database through the Model Context Protocol.
+It implements a search tool that allows querying documents indexed in Qdrant.
+"""
+
+import asyncio
+import logging
+import fnmatch
+from pathlib import Path
+from typing import List, Dict, Optional, Any
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+
+try:
+    import yaml
+except ImportError:
+    import ruamel.yaml as yaml
+
+try:
+    from mcp.server.fastmcp import FastMCP
+    from pydantic import BaseModel, Field
+except ImportError:
+    print("MCP dependencies not installed. Please run: pip install 'mcp[cli]'")
+    raise
+
+from rag_file_monitor.embedding_manager import EmbeddingManager
+
+
+class RAGSearchResult(BaseModel):
+    """Structured result for RAG search"""
+    file_path: str = Field(description="Path to the source file")
+    document: str = Field(description="Document content chunk")
+    score: float = Field(description="Similarity score (0-1, higher is better)")
+    chunk_index: int = Field(description="Index of the chunk within the document")
+    is_deleted: bool = Field(description="Whether the source file has been deleted")
+    deletion_timestamp: Optional[str] = Field(default=None, description="When the file was deleted, if applicable")
+
+
+class RAGSearchResponse(BaseModel):
+    """Complete response for RAG search including metadata"""
+    results: List[RAGSearchResult] = Field(description="List of matching document chunks")
+    query: str = Field(description="The original search query")
+    total_results: int = Field(description="Number of results returned")
+    filtered_by_pattern: Optional[str] = Field(default=None, description="Glob pattern used for filtering, if any")
+
+
+@asynccontextmanager
+async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
+    """Manage application lifecycle with RAG components"""
+    # Load configuration
+    config_path = Path(__file__).parent / "config.yaml"
+    if not config_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Setup logging
+    logging_config = config.get('logging', {})
+    log_level = getattr(logging, logging_config.get('level', 'INFO').upper())
+    
+    # Configure logging
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(logging_config.get('file', 'mcp_server.log'))
+        ]
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info("Starting MCP RAG Server")
+    
+    try:
+        # Initialize embedding manager
+        embedding_manager = EmbeddingManager(config)
+        logger.info("RAG system initialized successfully")
+        
+        yield {
+            "embedding_manager": embedding_manager,
+            "config": config,
+            "logger": logger
+        }
+    except Exception as e:
+        logger.error(f"Failed to initialize RAG system: {e}")
+        raise
+    finally:
+        logger.info("Shutting down MCP RAG Server")
+
+
+# Create MCP server
+mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
+
+
+def filter_results_by_glob(results: List[Dict], glob_pattern: str) -> List[Dict]:
+    """Filter search results by file path glob pattern (case insensitive)"""
+    if not glob_pattern:
+        return results
+    
+    filtered_results = []
+    pattern_lower = glob_pattern.lower()
+    
+    for result in results:
+        file_path = result.get('file_path', '')
+        # Convert to lowercase for case-insensitive matching
+        file_path_lower = file_path.lower()
+        
+        # Check if the file path matches the glob pattern
+        if fnmatch.fnmatch(file_path_lower, pattern_lower):
+            filtered_results.append(result)
+    
+    return filtered_results
+
+
+@mcp.tool()
+def rag_search(
+    query: str,
+    number_docs: int = 10,
+    glob_pattern: Optional[str] = None
+) -> RAGSearchResponse:
+    """
+    Search for relevant documents in the RAG database.
+    
+    This tool searches through indexed documents using semantic similarity
+    to find the most relevant content chunks for a given query.
+    
+    Args:
+        query: The search string used to find relevant documents
+        number_docs: Number of documents to return (default: 10)
+        glob_pattern: Optional glob pattern to filter results by file path (case insensitive)
+                     Examples: "*.pdf", "*/emails/*", "*report*"
+    
+    Returns:
+        RAGSearchResponse: Structured response containing matching document chunks
+    """
+    # Get application context
+    ctx = mcp.get_context()
+    embedding_manager = ctx.request_context.lifespan_context["embedding_manager"]
+    logger = ctx.request_context.lifespan_context["logger"]
+    
+    try:
+        logger.info(f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern})")
+        
+        # Perform the search using the embedding manager's search functionality
+        # Use a higher limit initially if we need to filter by glob pattern
+        search_limit = number_docs * 3 if glob_pattern else number_docs
+        
+        # Generate query embedding
+        query_embeddings = embedding_manager.generate_embeddings([query])
+        if not query_embeddings:
+            logger.error("Failed to generate query embedding")
+            return RAGSearchResponse(
+                results=[],
+                query=query,
+                total_results=0,
+                filtered_by_pattern=glob_pattern
+            )
+        
+        query_embedding = query_embeddings[0]
+        
+        # Create filter to exclude deleted documents
+        search_filter = {
+            "should": [
+                {
+                    "key": "is_deleted",
+                    "match": {"value": False}
+                },
+                {
+                    "must_not": [
+                        {
+                            "key": "is_deleted",
+                            "match": {"any": [True, False]}
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # Perform search with correct vector field name
+        search_result = embedding_manager.client.search(
+            collection_name=embedding_manager.collection_name,
+            query_vector={"fast-all-minilm-l6-v2": query_embedding},
+            limit=search_limit,
+            query_filter=search_filter,
+            with_payload=True
+        )
+        
+        # Convert search results to our format
+        raw_results = []
+        for hit in search_result:
+            result = {
+                'file_path': hit.payload.get('file_path', ''),
+                'document': hit.payload.get('document', ''),
+                'score': hit.score,
+                'chunk_index': hit.payload.get('chunk_index', 0),
+                'is_deleted': hit.payload.get('is_deleted', False)
+            }
+            
+            if hit.payload.get('deletion_timestamp'):
+                result['deletion_timestamp'] = hit.payload.get('deletion_timestamp')
+                
+            raw_results.append(result)
+        
+        # Apply glob pattern filtering if specified
+        if glob_pattern:
+            raw_results = filter_results_by_glob(raw_results, glob_pattern)
+            # Limit to requested number after filtering
+            raw_results = raw_results[:number_docs]
+        
+        # Convert to structured results
+        structured_results = []
+        for result in raw_results:
+            structured_result = RAGSearchResult(
+                file_path=result.get('file_path', ''),
+                document=result.get('document', ''),
+                score=result.get('score', 0.0),
+                chunk_index=result.get('chunk_index', 0),
+                is_deleted=result.get('is_deleted', False),
+                deletion_timestamp=result.get('deletion_timestamp')
+            )
+            structured_results.append(structured_result)
+        
+        response = RAGSearchResponse(
+            results=structured_results,
+            query=query,
+            total_results=len(structured_results),
+            filtered_by_pattern=glob_pattern
+        )
+        
+        logger.info(f"RAG search completed: {len(structured_results)} results returned")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error during RAG search: {e}")
+        # Return empty results on error rather than failing completely
+        return RAGSearchResponse(
+            results=[],
+            query=query,
+            total_results=0,
+            filtered_by_pattern=glob_pattern
+        )
+
+
+@mcp.resource("rag-config://server", title="RAG Server Configuration")
+def get_rag_config() -> str:
+    """Get the current RAG server configuration"""
+    ctx = mcp.get_context()
+    config = ctx.request_context.lifespan_context["config"]
+    
+    config_summary = {
+        "qdrant": config.get("qdrant", {}),
+        "embedding": config.get("embedding", {}),
+        "directories": config.get("directories", []),
+        "file_extensions": config.get("file_extensions", [])
+    }
+    
+    return yaml.dump(config_summary, default_flow_style=False)
+
+
+@mcp.resource("rag-stats://database", title="RAG Database Statistics")
+def get_database_stats() -> str:
+    """Get statistics about the RAG database"""
+    ctx = mcp.get_context()
+    embedding_manager = ctx.request_context.lifespan_context["embedding_manager"]
+    
+    try:
+        # Get collection information
+        collection_info = embedding_manager.client.get_collection(
+            collection_name=embedding_manager.collection_name
+        )
+        
+        stats = {
+            "collection_name": embedding_manager.collection_name,
+            "total_vectors": collection_info.vectors_count if hasattr(collection_info, 'vectors_count') else "Unknown",
+            "vector_size": embedding_manager.vector_size,
+            "embedding_model": embedding_manager.model_name,
+            "indexed_files": len(embedding_manager.file_hashes)
+        }
+        
+        return yaml.dump(stats, default_flow_style=False)
+        
+    except Exception as e:
+        return f"Error retrieving database statistics: {str(e)}"
+
+
+def main():
+    """Main entry point for the MCP server"""
+    # Run the FastMCP server
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()
