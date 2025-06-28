@@ -160,3 +160,101 @@ black .
 2. **File Processing Errors**: Check the log file for detailed error messages
 3. **Permission Issues**: Ensure the tool has read access to monitored directories
 4. **Large Files**: Adjust `max_file_size_mb` in config if needed
+
+## MCP Server
+
+The project includes a Model Context Protocol (MCP) server that provides access to the RAG database through standardized tools and resources.
+
+### Installation
+
+The MCP server requires additional dependencies:
+
+```bash
+pip install "mcp[cli]>=1.10.0"
+```
+
+### Usage
+
+#### Starting the MCP Server
+
+```bash
+# Start the MCP server using FastMCP
+rag-mcp-server
+
+# Or run directly
+python mcp_server.py
+```
+
+#### Development and Testing
+
+```bash
+# Test with MCP Inspector
+mcp dev mcp_server.py
+
+# Install in Claude Desktop
+mcp install mcp_server.py --name "RAG Document Search"
+```
+
+### Available Tools
+
+#### `rag_search`
+Searches for relevant documents in the RAG database using semantic similarity.
+
+**Parameters:**
+- `query` (required): The search string used to find relevant documents
+- `number_docs` (optional, default: 10): Number of documents to return
+- `glob_pattern` (optional): Glob pattern to filter results by file path (case insensitive)
+  - Examples: `"*.pdf"`, `"*/emails/*"`, `"*report*"`
+
+**Returns:**
+- Structured response with matching document chunks, including:
+  - File path and content
+  - Similarity score (0-1, higher is better)
+  - Chunk index within the document
+  - Whether the source file has been deleted
+
+**Example Usage:**
+```python
+# Search for documents about "machine learning"
+result = rag_search("machine learning")
+
+# Search for PDF documents about "quarterly reports"
+result = rag_search("quarterly reports", number_docs=5, glob_pattern="*.pdf")
+
+# Search in email folder
+result = rag_search("project update", glob_pattern="*/emails/*")
+```
+
+### Available Resources
+
+#### `rag-config://server`
+Provides the current RAG server configuration including Qdrant settings, embedding model configuration, monitored directories, and file extensions.
+
+#### `rag-stats://database`
+Returns statistics about the RAG database including collection information, total vectors, vector size, embedding model, and number of indexed files.
+
+### Configuration
+
+The MCP server uses the same `config.yaml` file as the file monitor. Make sure your Qdrant server is running and accessible before starting the MCP server.
+
+### Integration Examples
+
+#### With Claude Desktop
+
+Add to your Claude Desktop configuration:
+
+```json
+{
+  "mcpServers": {
+    "rag-documents": {
+      "command": "python",
+      "args": ["/path/to/your/mcp_server.py"],
+      "env": {}
+    }
+  }
+}
+```
+
+#### With Other MCP Clients
+
+The server implements the full MCP specification and can be used with any MCP-compatible client via stdio transport.

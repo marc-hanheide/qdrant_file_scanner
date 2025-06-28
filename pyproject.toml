@@ -19,12 +19,15 @@ dependencies = [
     "click>=8.1.0",
     "tqdm>=4.66.0",
     "libmagic>=0.4",
-    "psutil>=7.0.0"
+    "python-pptx>=0.6.23",
+    "openpyxl>=3.1.0",
+    "mcp[cli]>=1.10.0"
 ]
 
 [project.scripts]
 rag-monitor = "rag_file_monitor.file_monitor:main"
 rag-manage = "rag_file_monitor.manage_deleted:cli"
+rag-mcp-server = "mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]

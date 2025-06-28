@@ -20,6 +20,18 @@ try:
 except ImportError:
     Document = None
 
+# PPTX extraction
+try:
+    from pptx import Presentation
+except ImportError:
+    Presentation = None
+
+# XLSX extraction
+try:
+    from openpyxl import load_workbook
+except ImportError:
+    load_workbook = None
+
 # HTML extraction
 try:
     from bs4 import BeautifulSoup
@@ -43,6 +55,10 @@ class TextExtractor:
                 return self.extract_pdf(file_path)
             elif extension == '.docx':
                 return self.extract_docx(file_path)
+            elif extension == '.pptx':
+                return self.extract_pptx(file_path)
+            elif extension == '.xlsx':
+                return self.extract_xlsx(file_path)
             elif extension in ['.html', '.htm']:
                 return self.extract_html(file_path)
             elif extension in ['.txt', '.md', '.rtf']:
@@ -84,6 +100,75 @@ class TextExtractor:
             return "\n".join(text)
         except Exception as e:
             self.logger.error(f"Error reading DOCX {file_path}: {str(e)}")
+            return ""
+            
+    def extract_pptx(self, file_path: str) -> str:
+        """Extract text from PPTX file"""
+        if Presentation is None:
+            raise ImportError("python-pptx is required for PPTX extraction")
+            
+        try:
+            prs = Presentation(file_path)
+            text = []
+            
+            for slide in prs.slides:
+                # Extract text from all shapes in the slide
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        if shape.text.strip():  # Only add non-empty text
+                            text.append(shape.text.strip())
+                    
+                    # Handle tables if present
+                    if shape.has_table:
+                        table = shape.table
+                        for row in table.rows:
+                            row_text = []
+                            for cell in row.cells:
+                                if cell.text.strip():
+                                    row_text.append(cell.text.strip())
+                            if row_text:
+                                text.append(" | ".join(row_text))
+                
+                # Add separator between slides
+                if text and not text[-1].startswith("--- Slide"):
+                    text.append(f"--- Slide {len([t for t in text if t.startswith('--- Slide')]) + 1} ---")
+                    
+            return "\n".join(text)
+            
+        except Exception as e:
+            self.logger.error(f"Error reading PPTX {file_path}: {str(e)}")
+            return ""
+            
+    def extract_xlsx(self, file_path: str) -> str:
+        """Extract text from XLSX file"""
+        if load_workbook is None:
+            raise ImportError("openpyxl is required for XLSX extraction")
+            
+        try:
+            workbook = load_workbook(file_path, read_only=True, data_only=True)
+            text = []
+            
+            for sheet_name in workbook.sheetnames:
+                sheet = workbook[sheet_name]
+                text.append(f"--- Sheet: {sheet_name} ---")
+                
+                # Get the used range to avoid empty cells
+                if sheet.max_row > 0 and sheet.max_column > 0:
+                    for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, 
+                                             min_col=1, max_col=sheet.max_column, 
+                                             values_only=True):
+                        # Filter out None values and convert to strings
+                        row_values = [str(cell) for cell in row if cell is not None and str(cell).strip()]
+                        if row_values:  # Only add non-empty rows
+                            text.append(" | ".join(row_values))
+                
+                text.append("")  # Add blank line between sheets
+            
+            workbook.close()
+            return "\n".join(text)
+            
+        except Exception as e:
+            self.logger.error(f"Error reading XLSX {file_path}: {str(e)}")
             return ""
             
     def extract_html(self, file_path: str) -> str:
