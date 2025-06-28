@@ -1,0 +1,44 @@
+directories:
+  - "/Users/mhanheide/Documents"
+  # - "/Users/yourusername/Desktop"
+  # Add more directories as needed
+
+# File extensions to process
+file_extensions:
+  - ".txt"
+  - ".md"
+  - ".pdf"
+  - ".docx"
+  - ".html"
+  - ".htm"
+  - ".rtf"
+
+# Qdrant configuration
+qdrant:
+  host: "localhost"
+  port: 6333
+  collection_name: "rag_documents"
+  vector_size: 384  # Default for all-MiniLM-L6-v2
+
+# Embedding model configuration
+embedding:
+  model_name: "all-MiniLM-L6-v2"  # Fast and good quality
+  chunk_size: 1024  # Characters per chunk
+  chunk_overlap: 200  # Overlap between chunks
+
+# Processing configuration
+processing:
+  max_file_size_mb: 5  # Skip files larger than this
+  exclude_patterns:
+    - "*.tmp"
+    - "*.log"
+    - ".git/*"
+    - "__pycache__/*"
+    - "*.pyc"
+  # When files are deleted, should we delete embeddings or mark as deleted?
+  delete_embeddings_on_file_deletion: false  # Set to true to delete, false to mark as deleted
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "rag_monitor.log"
