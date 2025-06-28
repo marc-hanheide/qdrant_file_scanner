@@ -362,7 +362,6 @@ class EmbeddingManager:
                 updated_payload['is_deleted'] = True
                 updated_payload['metadata']['is_deleted'] = True
                 updated_payload['deletion_timestamp'] = deletion_timestamp
-                print(f"Marking point {point} as deleted")
                 updated_point = PointStruct(
                     id=point.id,
                     vector={
