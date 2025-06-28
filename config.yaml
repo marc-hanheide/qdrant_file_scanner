@@ -1,6 +1,7 @@
 directories:
   - "/Users/mhanheide/Downloads"
   - "/Users/mhanheide/Desktop"
+  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails"
   # Add more directories as needed
 
 # File extensions to process
@@ -9,6 +10,8 @@ file_extensions:
   - ".md"
   - ".pdf"
   - ".docx"
+  - ".pptx"
+  - ".xlsx"
   - ".html"
   - ".htm"
   - ".rtf"
