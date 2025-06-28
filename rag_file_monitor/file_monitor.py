@@ -56,10 +56,14 @@ class FileMonitorHandler(FileSystemEventHandler):
         return True
         
     def get_file_hash(self, file_path: str) -> str:
-        """Get MD5 hash of file for change detection"""
+        """Get MD5 hash of file for change detection using streaming"""
         try:
+            hash_md5 = hashlib.md5()
+            # Read file in chunks to avoid loading entire file into memory
             with open(file_path, 'rb') as f:
-                return hashlib.md5(f.read()).hexdigest()
+                for chunk in iter(lambda: f.read(8192), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
         except Exception:
             return ""
             

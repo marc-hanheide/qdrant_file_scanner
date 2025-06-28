@@ -114,18 +114,27 @@ class TextExtractor:
             return ""
             
     def extract_text_file(self, file_path: str) -> str:
-        """Extract text from plain text file"""
+        """Extract text from plain text file with memory optimization"""
         try:
-            # Detect encoding
+            # Detect encoding first with limited data
             with open(file_path, 'rb') as file:
-                raw_data = file.read()
-                encoding = chardet.detect(raw_data)['encoding']
+                # Read only a sample for encoding detection to save memory
+                raw_data = file.read(10000)  # Read first 10KB for encoding detection
                 
-            if encoding is None:
-                encoding = 'utf-8'
-                
+            result = chardet.detect(raw_data)
+            encoding = result['encoding'] or 'utf-8'
+            
+            # For very large files, implement size limit
             with open(file_path, 'r', encoding=encoding, errors='ignore') as file:
-                return file.read()
+                # Read in chunks for very large files
+                max_size = 10 * 1024 * 1024  # 10MB limit
+                content = file.read(max_size)
+                
+                # Check if file was truncated
+                if len(content) == max_size:
+                    self.logger.warning(f"Large file {file_path} was truncated to {max_size} bytes")
+                    
+            return content
                 
         except Exception as e:
             self.logger.error(f"Error reading text file {file_path}: {str(e)}")

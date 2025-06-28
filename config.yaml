@@ -1,6 +1,6 @@
 directories:
-  - "/Users/mhanheide/Documents"
-  # - "/Users/yourusername/Desktop"
+  #- "/Users/mhanheide/Documents"
+  - "/Users/mhanheide/Desktop"
   # Add more directories as needed
 
 # File extensions to process
@@ -29,6 +29,7 @@ embedding:
 # Processing configuration
 processing:
   max_file_size_mb: 5  # Skip files larger than this
+  max_text_size_mb: 5  # Truncate text files larger than this
   exclude_patterns:
     - "*.tmp"
     - "*.log"
@@ -37,6 +38,13 @@ processing:
     - "*.pyc"
   # When files are deleted, should we delete embeddings or mark as deleted?
   delete_embeddings_on_file_deletion: false  # Set to true to delete, false to mark as deleted
+
+# Memory optimization settings
+memory:
+  chunk_batch_size: 25  # Process document chunks in batches
+  hash_loading_batch_size: 100  # Load file hashes in batches
+  unload_model_after_idle_minutes: 30  # Unload embedding model after idle time
+  force_gc_after_operations: 100  # Force garbage collection after N operations
 
 # Logging
 logging:

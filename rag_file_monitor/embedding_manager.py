@@ -21,6 +21,8 @@ except ImportError:
     VectorParams = None
     PointStruct = None
 
+from .memory_utils import MemoryMonitor, ModelManager
+
 
 class EmbeddingManager:
     """Manage embeddings and Qdrant vector database operations"""
@@ -29,13 +31,13 @@ class EmbeddingManager:
         self.config = config
         self.logger = logging.getLogger(__name__)
         
-        # Initialize embedding model
+        # Initialize embedding model lazily
         if SentenceTransformer is None:
             raise ImportError("sentence-transformers is required")
             
-        model_name = config['embedding']['model_name']
-        self.logger.info(f"Loading embedding model: {model_name}")
-        self.embedding_model = SentenceTransformer(model_name)
+        self.model_name = config['embedding']['model_name']
+        self.embedding_model = None  # Load lazily
+        self.logger.info(f"Embedding model configured: {self.model_name}")
         
         # Initialize Qdrant client
         if QdrantClient is None:
@@ -82,18 +84,46 @@ class EmbeddingManager:
             raise
             
     def _load_file_hashes(self):
-        """Load existing file hashes from Qdrant metadata"""
+        """Load existing file hashes from Qdrant metadata using pagination"""
         try:
-            # Get all points to build file hash cache
-            scroll_result = self.client.scroll(
-                collection_name=self.collection_name,
-                limit=10000,  # Adjust based on your needs
-                with_payload=True
-            )
+            self.logger.info(f"Loading existing file hashes from Qdrant")
             
-            for point in scroll_result[0]:
-                if 'file_path' in point.payload and 'file_hash' in point.payload:
-                    self.file_hashes[point.payload['file_path']] = point.payload['file_hash']
+            # Use pagination to avoid loading all points at once
+            offset = None
+            batch_size = self.config.get('memory', {}).get('hash_loading_batch_size', 1000)  # Use config value with default
+            total_loaded = 0
+            
+            while True:
+                scroll_result = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=batch_size,
+                    offset=offset,
+                    with_payload=["file_path", "file_hash"]  # Only load needed fields
+                )
+                
+                points, next_offset = scroll_result
+                
+                if not points:
+                    break
+                    
+                # Process batch and extract unique file hashes
+                for point in points:
+                    if 'file_path' in point.payload and 'file_hash' in point.payload:
+                        self.file_hashes[point.payload['file_path']] = point.payload['file_hash']
+                
+                total_loaded += len(points)
+                
+                # Break if no more results
+                if next_offset is None:
+                    break
+                    
+                offset = next_offset
+                
+                # Optional: Yield control to prevent blocking
+                if total_loaded % 5000 == 0:
+                    self.logger.info(f"Loaded {total_loaded} file hashes so far...")
+            
+            self.logger.info(f"Loaded {len(self.file_hashes)} unique file hashes from {total_loaded} points")
                     
         except Exception as e:
             self.logger.error(f"Error loading file hashes: {str(e)}")
@@ -103,11 +133,15 @@ class EmbeddingManager:
         return self.file_hashes.get(file_path) == current_hash
     
     def get_file_hash(self, file_path: str) -> str:
-        """Get MD5 hash of file for change detection"""
+        """Get MD5 hash of file for change detection using streaming"""
         import hashlib
         try:
+            hash_md5 = hashlib.md5()
+            # Read file in chunks to avoid loading entire file into memory
             with open(file_path, 'rb') as f:
-                return hashlib.md5(f.read()).hexdigest()
+                for chunk in iter(lambda: f.read(8192), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
         except Exception:
             return ""
         
@@ -144,16 +178,34 @@ class EmbeddingManager:
         return chunks
         
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for list of texts"""
+        """Generate embeddings for list of texts with memory optimization"""
         try:
-            embeddings = self.embedding_model.encode(texts, convert_to_tensor=False)
-            return embeddings.tolist()
+            # Process in smaller batches to reduce memory usage
+            batch_size = 32  # Adjust based on your system's memory
+            all_embeddings = []
+            
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i:i + batch_size]
+                batch_embeddings = self._get_embedding_model().encode(
+                    batch, 
+                    convert_to_tensor=False,
+                    show_progress_bar=False,
+                    batch_size=min(len(batch), 16)  # Internal batch size
+                )
+                all_embeddings.extend(batch_embeddings.tolist())
+                
+                # Optional: Force garbage collection for large batches
+                if len(texts) > 100 and i % (batch_size * 4) == 0:
+                    import gc
+                    gc.collect()
+            
+            return all_embeddings
         except Exception as e:
             self.logger.error(f"Error generating embeddings: {str(e)}")
             return []
             
     def index_document(self, file_path: str, text_content: str, file_hash: str):
-        """Index a document in Qdrant"""
+        """Index a document in Qdrant with memory optimization"""
         try:
             # First, delete existing documents for this file (including those marked as deleted)
             self.delete_document(file_path, force_delete=True)
@@ -163,58 +215,77 @@ class EmbeddingManager:
             if not chunks:
                 self.logger.warning(f"No chunks generated for {file_path}")
                 return
-                
-            # Generate embeddings
-            embeddings = self.generate_embeddings(chunks)
-            if not embeddings:
-                self.logger.error(f"No embeddings generated for {file_path}")
-                return
-                
-            # Create points for Qdrant
-            points = []
-            timestamp = datetime.now().isoformat()
             
-            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                point_id = str(uuid.uuid4())
+            timestamp = datetime.now().isoformat()
+            # Process chunks in batches to reduce memory usage
+            chunk_batch_size = self.config['memory'].get('chunk_batch_size', 50)  # Process chunks in smaller batches
+            timestamp = datetime.now().isoformat()
+            total_indexed = 0
+            
+            for batch_start in range(0, len(chunks), chunk_batch_size):
+                batch_end = min(batch_start + chunk_batch_size, len(chunks))
+                chunk_batch = chunks[batch_start:batch_end]
                 
-                payload = {
-                    'document': chunk,
-                    'metadata': {
+                # Generate embeddings for this batch
+                embeddings = self.generate_embeddings(chunk_batch)
+                if not embeddings:
+                    self.logger.error(f"No embeddings generated for batch {batch_start}-{batch_end} of {file_path}")
+                    continue
+                
+                # Create points for Qdrant
+                points = []
+                
+                for i, (chunk, embedding) in enumerate(zip(chunk_batch, embeddings)):
+                    point_id = str(uuid.uuid4())
+                    chunk_index = batch_start + i
+                    
+                    payload = {
+                        'document': chunk,
+                        'metadata': {
+                            'file_path': file_path,
+                            'file_hash': file_hash,
+                            'chunk_index': chunk_index,
+                            'timestamp': timestamp,
+                            'file_size': len(text_content),
+                            'is_deleted': False  # Mark as active file
+                        },
                         'file_path': file_path,
                         'file_hash': file_hash,
-                        'chunk_index': i,
+                        'chunk_index': chunk_index,
                         'timestamp': timestamp,
                         'file_size': len(text_content),
                         'is_deleted': False  # Mark as active file
-                    },
-                    'file_path': file_path,
-                    'file_hash': file_hash,
-                    'chunk_index': i,
-                    'timestamp': timestamp,
-                    'file_size': len(text_content),
-                    'is_deleted': False  # Mark as active file
-
-                }
+                    }
+                    
+                    point = PointStruct(
+                        id=point_id,
+                        vector={
+                           'fast-all-minilm-l6-v2': embedding
+                        },
+                        payload=payload
+                    )
+                    points.append(point)
                 
-                point = PointStruct(
-                    id=point_id,
-                    vector={
-                       'fast-all-minilm-l6-v2': embedding
-                    },
-                    payload=payload
+                # Upload batch to Qdrant
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=points
                 )
-                points.append(point)
                 
-            # Upload to Qdrant
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=points
-            )
+                total_indexed += len(points)
+                
+                # Clear batch data from memory
+                del chunk_batch, embeddings, points
+                
+                # Optional: Force garbage collection between batches
+                if batch_start % (chunk_batch_size * 4) == 0:
+                    import gc
+                    gc.collect()
             
             # Update file hash cache
             self.file_hashes[file_path] = file_hash
             
-            self.logger.info(f"Indexed {len(chunks)} chunks from {file_path}")
+            self.logger.info(f"Indexed {total_indexed} chunks from {file_path}")
             
         except Exception as e:
             self.logger.error(f"Error indexing document {file_path}: {str(e)}")
@@ -270,7 +341,8 @@ class EmbeddingManager:
                     ]
                 },
                 limit=10000,
-                with_payload=True
+                with_payload=True,
+                with_vectors=True  # No need to load vectors for deletion
             )
             
             # Update points to mark as deleted
@@ -281,12 +353,13 @@ class EmbeddingManager:
                 # Update payload to mark as deleted
                 updated_payload = point.payload.copy()
                 updated_payload['is_deleted'] = True
+                updated_payload['metadata']['is_deleted'] = True
                 updated_payload['deletion_timestamp'] = deletion_timestamp
-                
+                print(f"Marking point {point} as deleted")
                 updated_point = PointStruct(
                     id=point.id,
                     vector={
-                       'fast-all-minilm-l6-v2': point.vector
+                       'fast-all-minilm-l6-v2': point.vector['fast-all-minilm-l6-v2']
                     },
                     payload=updated_payload
                 )
@@ -396,3 +469,19 @@ class EmbeddingManager:
         except Exception as e:
             self.logger.error(f"Error getting deleted documents: {str(e)}")
             return []
+    
+    def _get_embedding_model(self):
+        """Lazy loading of embedding model to save memory"""
+        if self.embedding_model is None:
+            self.logger.info(f"Loading embedding model: {self.model_name}")
+            self.embedding_model = SentenceTransformer(self.model_name)
+        return self.embedding_model
+    
+    def unload_embedding_model(self):
+        """Unload embedding model to free memory when not needed"""
+        if self.embedding_model is not None:
+            self.logger.info("Unloading embedding model to free memory")
+            del self.embedding_model
+            self.embedding_model = None
+            import gc
+            gc.collect()
