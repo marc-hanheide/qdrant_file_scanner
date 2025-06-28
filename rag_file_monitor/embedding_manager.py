@@ -4,6 +4,7 @@ Embedding generation and Qdrant database management
 
 import logging
 import uuid
+import fnmatch
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -14,7 +15,7 @@ except ImportError:
 
 try:
     from qdrant_client import QdrantClient
-    from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+    from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchText
 except ImportError:
     QdrantClient = None
     Distance = None
@@ -23,6 +24,7 @@ except ImportError:
     Filter = None
     FieldCondition = None
     MatchValue = None
+    MatchText = None
 
 #from ..memory_utils import ModelManager
 
@@ -393,6 +395,67 @@ class EmbeddingManager:
         except Exception as e:
             self.logger.error(f"Error marking document as deleted {file_path}: {str(e)}")
             
+    def _build_glob_filter_conditions(self, glob_pattern: str) -> List[FieldCondition]:
+        """
+        Convert glob pattern to Qdrant filter conditions.
+        
+        This method handles common glob patterns and converts them to efficient Qdrant filters:
+        - *.ext -> files ending with .ext
+        - *keyword* -> files containing keyword
+        - prefix* -> files starting with prefix
+        - Complex patterns fall back to post-processing
+        """
+        if not glob_pattern:
+            return []
+            
+        filter_conditions = []
+        pattern_lower = glob_pattern.lower()
+        
+        try:
+            # Handle file extension patterns like "*.pdf", "*.txt"
+            if pattern_lower.startswith('*.') and '*' not in pattern_lower[2:]:
+                extension = pattern_lower[1:]  # Include the dot
+                # Use MatchText to find files ending with the extension
+                if MatchText is not None:
+                    filter_conditions.append(
+                        FieldCondition(
+                            key="file_path",
+                            match=MatchText(text=extension)
+                        )
+                    )
+                return filter_conditions
+            
+            # Handle simple prefix patterns like "report*"
+            elif pattern_lower.endswith('*') and '*' not in pattern_lower[:-1]:
+                prefix = pattern_lower[:-1]
+                if MatchText is not None:
+                    filter_conditions.append(
+                        FieldCondition(
+                            key="file_path", 
+                            match=MatchText(text=prefix)
+                        )
+                    )
+                return filter_conditions
+            
+            # Handle simple contains patterns like "*keyword*"
+            elif pattern_lower.startswith('*') and pattern_lower.endswith('*') and pattern_lower.count('*') == 2:
+                keyword = pattern_lower[1:-1]
+                if keyword and MatchText is not None:
+                    filter_conditions.append(
+                        FieldCondition(
+                            key="file_path",
+                            match=MatchText(text=keyword)
+                        )
+                    )
+                return filter_conditions
+                
+        except Exception as e:
+            self.logger.warning(f"Error building glob filter conditions: {e}")
+        
+        # For complex patterns, return empty list and fall back to post-processing
+        # This includes patterns with multiple *, path separators, etc.
+        return []
+
     def search_similar(self, query: str, limit: int = 5, include_deleted: bool = True, glob_pattern: Optional[str] = None) -> List[Dict]:
         """Search for similar documents with optional glob pattern filtering"""
         try:
@@ -410,12 +473,24 @@ class EmbeddingManager:
                     )
                 )
             
-            # For glob pattern filtering, we'll use a larger search limit and filter results
-            # This is more efficient than post-processing all results
-            effective_limit = limit
+            # Try to add glob pattern filter conditions at Qdrant level
+            use_post_processing = False
             if glob_pattern:
-                # Increase search limit to account for filtering
-                effective_limit = min(limit * 5, 1000)  # Cap at reasonable limit
+                glob_filter_conditions = self._build_glob_filter_conditions(glob_pattern)
+                if glob_filter_conditions:
+                    self.logger.info(f"Direct filtering on qdrant: {glob_filter_conditions}")
+                    # We can filter at Qdrant level
+                    filter_conditions.extend(glob_filter_conditions)
+                else:
+                    # Complex pattern - need post-processing
+                    self.logger.info(f"needs post processing: {glob_pattern}")
+                    use_post_processing = True
+                    
+            # Set search limit based on whether we need post-processing
+            effective_limit = limit
+            if use_post_processing:
+                # Increase limit to account for post-processing filtering
+                effective_limit = min(limit * 100, 1000)
             
             # Combine all filter conditions
             search_filter = None
@@ -443,17 +518,15 @@ class EmbeddingManager:
                 if hit.payload.get('deletion_timestamp'):
                     result['deletion_timestamp'] = hit.payload.get('deletion_timestamp')
                 
-                # Apply glob pattern filtering if specified
+                # Apply post-processing glob filter if needed
                 if glob_pattern:
-                    import fnmatch
                     file_path = result.get('file_path', '')
-                    # Case insensitive matching
-                    if not fnmatch.fnmatch(file_path.lower(), glob_pattern.lower()):
+                    if not self._matches_glob_pattern(file_path, glob_pattern):
                         continue
                 
                 results.append(result)
                 
-                # Stop once we have enough results
+                # Stop once we have enough results (for post-processing case)
                 if len(results) >= limit:
                     break
                 
@@ -463,6 +536,21 @@ class EmbeddingManager:
             self.logger.error(f"Error searching: {str(e)}")
             return []
     
+    def _matches_glob_pattern(self, file_path: str, glob_pattern: str) -> bool:
+        """
+        Check if a file path matches the given glob pattern.
+        This is used for complex patterns that can't be handled by Qdrant filters.
+        """
+        if not file_path or not glob_pattern:
+            return True
+        
+        # Case insensitive matching
+        file_path_lower = file_path.lower()
+        glob_pattern_lower = glob_pattern.lower()
+        
+        # Use fnmatch for the actual pattern matching
+        return fnmatch.fnmatch(file_path_lower, glob_pattern_lower)
+
     def get_deleted_documents(self) -> List[Dict]:
         """Get list of all documents marked as deleted"""
         try:

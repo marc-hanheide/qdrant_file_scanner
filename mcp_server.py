@@ -138,7 +138,7 @@ def rag_search(
         raw_results = embedding_manager.search_similar(
             query=query,
             limit=number_docs,
-            include_deleted=False,  # Don't include deleted documents by default
+            include_deleted=True,  # Don't include deleted documents by default
             glob_pattern=glob_pattern
         )
         
