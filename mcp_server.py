@@ -77,7 +77,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     
     try:
         # Initialize embedding manager
-        embedding_manager = EmbeddingManager(config)
+        embedding_manager = EmbeddingManager(config, slim_mode=True)
         logger.info("RAG system initialized successfully")
         
         yield {
@@ -149,61 +149,12 @@ def rag_search(
         # Use a higher limit initially if we need to filter by glob pattern
         search_limit = number_docs * 3 if glob_pattern else number_docs
         
-        # Generate query embedding
-        query_embeddings = embedding_manager.generate_embeddings([query])
-        if not query_embeddings:
-            logger.error("Failed to generate query embedding")
-            return RAGSearchResponse(
-                results=[],
-                query=query,
-                total_results=0,
-                filtered_by_pattern=glob_pattern
-            )
-        
-        query_embedding = query_embeddings[0]
-        
-        # Create filter to exclude deleted documents
-        search_filter = {
-            "should": [
-                {
-                    "key": "is_deleted",
-                    "match": {"value": False}
-                },
-                {
-                    "must_not": [
-                        {
-                            "key": "is_deleted",
-                            "match": {"any": [True, False]}
-                        }
-                    ]
-                }
-            ]
-        }
-        
-        # Perform search with correct vector field name
-        search_result = embedding_manager.client.search(
-            collection_name=embedding_manager.collection_name,
-            query_vector={"fast-all-minilm-l6-v2": query_embedding},
+        # Use the existing search_similar method which handles all the complexity
+        raw_results = embedding_manager.search_similar(
+            query=query,
             limit=search_limit,
-            query_filter=search_filter,
-            with_payload=True
+            include_deleted=False  # Don't include deleted documents by default
         )
-        
-        # Convert search results to our format
-        raw_results = []
-        for hit in search_result:
-            result = {
-                'file_path': hit.payload.get('file_path', ''),
-                'document': hit.payload.get('document', ''),
-                'score': hit.score,
-                'chunk_index': hit.payload.get('chunk_index', 0),
-                'is_deleted': hit.payload.get('is_deleted', False)
-            }
-            
-            if hit.payload.get('deletion_timestamp'):
-                result['deletion_timestamp'] = hit.payload.get('deletion_timestamp')
-                
-            raw_results.append(result)
         
         # Apply glob pattern filtering if specified
         if glob_pattern:

@@ -21,13 +21,13 @@ except ImportError:
     VectorParams = None
     PointStruct = None
 
-from .memory_utils import MemoryMonitor, ModelManager
+#from ..memory_utils import ModelManager
 
 
 class EmbeddingManager:
     """Manage embeddings and Qdrant vector database operations"""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, slim_mode: bool = False):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -57,7 +57,10 @@ class EmbeddingManager:
         
         # File tracking for change detection
         self.file_hashes = {}
-        self._load_file_hashes()
+        if not slim_mode:
+            self.logger.info("Loading existing file hashes from Qdrant")
+            # Load existing file hashes from Qdrant metadata
+            self._load_file_hashes()
         
     def _ensure_collection_exists(self):
         """Ensure the Qdrant collection exists"""
