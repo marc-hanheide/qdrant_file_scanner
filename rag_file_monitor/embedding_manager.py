@@ -14,12 +14,15 @@ except ImportError:
 
 try:
     from qdrant_client import QdrantClient
-    from qdrant_client.models import Distance, VectorParams, PointStruct
+    from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 except ImportError:
     QdrantClient = None
     Distance = None
     VectorParams = None
     PointStruct = None
+    Filter = None
+    FieldCondition = None
+    MatchValue = None
 
 #from ..memory_utils import ModelManager
 
@@ -51,6 +54,7 @@ class EmbeddingManager:
         
         self.collection_name = qdrant_config['collection_name']
         self.vector_size = qdrant_config['vector_size']
+        self.vector_name = "fast-all-minilm-l6-v2"  # Named vector for the collection
         
         # Ensure collection exists
         self._ensure_collection_exists()
@@ -73,7 +77,7 @@ class EmbeddingManager:
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config={
-                        "fast-all-minilm-l6-v2": VectorParams(
+                        self.vector_name: VectorParams(
                             size=self.vector_size,
                             distance=Distance.COSINE
                         )
@@ -270,7 +274,7 @@ class EmbeddingManager:
                     point = PointStruct(
                         id=point_id,
                         vector={
-                           'fast-all-minilm-l6-v2': embedding
+                           self.vector_name: embedding
                         },
                         payload=payload
                     )
@@ -306,14 +310,14 @@ class EmbeddingManager:
             # Find all points for this file
             search_result = self.client.scroll(
                 collection_name=self.collection_name,
-                scroll_filter={
-                    "must": [
-                        {
-                            "key": "file_path",
-                            "match": {"value": file_path}
-                        }
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="file_path",
+                            match=MatchValue(value=file_path)
+                        )
                     ]
-                },
+                ),
                 limit=10000,
                 with_payload=True
             )
@@ -342,14 +346,14 @@ class EmbeddingManager:
             # Find all points for this file
             search_result = self.client.scroll(
                 collection_name=self.collection_name,
-                scroll_filter={
-                    "must": [
-                        {
-                            "key": "file_path",
-                            "match": {"value": file_path}
-                        }
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="file_path",
+                            match=MatchValue(value=file_path)
+                        )
                     ]
-                },
+                ),
                 limit=10000,
                 with_payload=True,
                 with_vectors=True  # No need to load vectors for deletion
@@ -368,7 +372,7 @@ class EmbeddingManager:
                 updated_point = PointStruct(
                     id=point.id,
                     vector={
-                       'fast-all-minilm-l6-v2': point.vector['fast-all-minilm-l6-v2']
+                       self.vector_name: point.vector[self.vector_name]
                     },
                     payload=updated_payload
                 )
@@ -389,35 +393,39 @@ class EmbeddingManager:
         except Exception as e:
             self.logger.error(f"Error marking document as deleted {file_path}: {str(e)}")
             
-    def search_similar(self, query: str, limit: int = 5, include_deleted: bool = False) -> List[Dict]:
-        """Search for similar documents (for testing)"""
+    def search_similar(self, query: str, limit: int = 5, include_deleted: bool = True, glob_pattern: Optional[str] = None) -> List[Dict]:
+        """Search for similar documents with optional glob pattern filtering"""
         try:
             query_embedding = self.generate_embeddings([query])[0]
             
-            # Create filter to exclude deleted documents unless specifically requested
-            search_filter = None
+            # Build search filter conditions using proper Qdrant filter format
+            filter_conditions = []
+            
+            # Handle deleted documents filter
             if not include_deleted:
-                search_filter = {
-                    "should": [
-                        {
-                            "key": "is_deleted",
-                            "match": {"value": False}
-                        },
-                        {
-                            "must_not": [
-                                {
-                                    "key": "is_deleted",
-                                    "match": {"any": [True, False]}
-                                }
-                            ]
-                        }
-                    ]
-                }
+                filter_conditions.append(
+                    FieldCondition(
+                        key="is_deleted",
+                        match=MatchValue(value=False)
+                    )
+                )
+            
+            # For glob pattern filtering, we'll use a larger search limit and filter results
+            # This is more efficient than post-processing all results
+            effective_limit = limit
+            if glob_pattern:
+                # Increase search limit to account for filtering
+                effective_limit = min(limit * 5, 1000)  # Cap at reasonable limit
+            
+            # Combine all filter conditions
+            search_filter = None
+            if filter_conditions:
+                search_filter = Filter(must=filter_conditions)
             
             search_result = self.client.search(
                 collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=limit,
+                query_vector=(self.vector_name, query_embedding),
+                limit=effective_limit,
                 query_filter=search_filter,
                 with_payload=True
             )
@@ -434,8 +442,20 @@ class EmbeddingManager:
                 
                 if hit.payload.get('deletion_timestamp'):
                     result['deletion_timestamp'] = hit.payload.get('deletion_timestamp')
-                    
+                
+                # Apply glob pattern filtering if specified
+                if glob_pattern:
+                    import fnmatch
+                    file_path = result.get('file_path', '')
+                    # Case insensitive matching
+                    if not fnmatch.fnmatch(file_path.lower(), glob_pattern.lower()):
+                        continue
+                
                 results.append(result)
+                
+                # Stop once we have enough results
+                if len(results) >= limit:
+                    break
                 
             return results
             
@@ -448,14 +468,14 @@ class EmbeddingManager:
         try:
             search_result = self.client.scroll(
                 collection_name=self.collection_name,
-                scroll_filter={
-                    "must": [
-                        {
-                            "key": "is_deleted",
-                            "match": {"value": True}
-                        }
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="is_deleted",
+                            match=MatchValue(value=True)
+                        )
                     ]
-                },
+                ),
                 limit=10000,
                 with_payload=True
             )

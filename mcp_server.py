@@ -63,14 +63,23 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     log_level = getattr(logging, logging_config.get('level', 'INFO').upper())
     
     # Configure logging
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(logging_config.get('file', 'mcp_server.log'))
-        ]
-    )
+    log_file = logging_config.get('mcp_logfile', 'mcp_rag_server.log')
+    
+    # Create file handler with explicit settings
+    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    # Create stream handler
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(log_level)
+    stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
     
     logger = logging.getLogger(__name__)
     logger.info("Starting MCP RAG Server")
@@ -94,26 +103,6 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
 # Create MCP server
 mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
-
-
-def filter_results_by_glob(results: List[Dict], glob_pattern: str) -> List[Dict]:
-    """Filter search results by file path glob pattern (case insensitive)"""
-    if not glob_pattern:
-        return results
-    
-    filtered_results = []
-    pattern_lower = glob_pattern.lower()
-    
-    for result in results:
-        file_path = result.get('file_path', '')
-        # Convert to lowercase for case-insensitive matching
-        file_path_lower = file_path.lower()
-        
-        # Check if the file path matches the glob pattern
-        if fnmatch.fnmatch(file_path_lower, pattern_lower):
-            filtered_results.append(result)
-    
-    return filtered_results
 
 
 @mcp.tool()
@@ -145,22 +134,13 @@ def rag_search(
     try:
         logger.info(f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern})")
         
-        # Perform the search using the embedding manager's search functionality
-        # Use a higher limit initially if we need to filter by glob pattern
-        search_limit = number_docs * 3 if glob_pattern else number_docs
-        
-        # Use the existing search_similar method which handles all the complexity
+        # Use the existing search_similar method with glob pattern support
         raw_results = embedding_manager.search_similar(
             query=query,
-            limit=search_limit,
-            include_deleted=False  # Don't include deleted documents by default
+            limit=number_docs,
+            include_deleted=False,  # Don't include deleted documents by default
+            glob_pattern=glob_pattern
         )
-        
-        # Apply glob pattern filtering if specified
-        if glob_pattern:
-            raw_results = filter_results_by_glob(raw_results, glob_pattern)
-            # Limit to requested number after filtering
-            raw_results = raw_results[:number_docs]
         
         # Convert to structured results
         structured_results = []
