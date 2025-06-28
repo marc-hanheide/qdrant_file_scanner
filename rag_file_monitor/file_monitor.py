@@ -104,6 +104,7 @@ class FileMonitorHandler(FileSystemEventHandler):
             if self.embedding_manager.is_file_unchanged(file_path, current_hash):
                 return
                 
+            self.logger.info(f"Document {file_path} needs indexing, extract text")
             # Extract text
             text_content = self.text_extractor.extract_text(file_path)
             if not text_content.strip():
@@ -185,8 +186,11 @@ class FileMonitor:
                 for file in files:
                     file_path = os.path.join(root, file)
                     if handler.should_process_file(file_path):
+                        self.logger.info(f"Processing existing file: {file_path}")
                         handler.process_file(file_path)
                         total_files += 1
+                    else:
+                        self.logger.debug(f"Skipping file: {file_path} (does not match criteria)")
                         
         self.logger.info(f"Finished scanning. Processed {total_files} files.")
         

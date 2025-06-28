@@ -1,5 +1,5 @@
 directories:
-  #- "/Users/mhanheide/Documents"
+  - "/Users/mhanheide/Downloads"
   - "/Users/mhanheide/Desktop"
   # Add more directories as needed
 
@@ -29,7 +29,6 @@ embedding:
 # Processing configuration
 processing:
   max_file_size_mb: 5  # Skip files larger than this
-  max_text_size_mb: 5  # Truncate text files larger than this
   exclude_patterns:
     - "*.tmp"
     - "*.log"
@@ -48,5 +47,5 @@ memory:
 
 # Logging
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
   file: "rag_monitor.log"

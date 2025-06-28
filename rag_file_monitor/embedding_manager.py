@@ -158,6 +158,7 @@ class EmbeddingManager:
         
         while start < len(text):
             end = start + chunk_size
+            original_end = end
             
             # Try to break at word boundary
             if end < len(text):
@@ -170,8 +171,13 @@ class EmbeddingManager:
             if chunk:
                 chunks.append(chunk)
                 
-            # Move start position with overlap
-            start = end - chunk_overlap
+            # Move start position with overlap, but ensure we always advance
+            next_start = end - chunk_overlap
+            if next_start <= start:
+                # Fallback: advance by at least chunk_size to avoid infinite loop
+                next_start = start + max(chunk_size, 1)
+            
+            start = next_start
             if start >= len(text):
                 break
                 
@@ -215,7 +221,8 @@ class EmbeddingManager:
             if not chunks:
                 self.logger.warning(f"No chunks generated for {file_path}")
                 return
-            
+            self.logger.info(f"Indexing document {file_path} with {len(chunks)} chunks")
+
             timestamp = datetime.now().isoformat()
             # Process chunks in batches to reduce memory usage
             chunk_batch_size = self.config['memory'].get('chunk_batch_size', 50)  # Process chunks in smaller batches
