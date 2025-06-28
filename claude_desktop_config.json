@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "rag-documents": {
-      "command": "python",
-      "args": ["/Users/mhanheide/workspace/qdrant_file_scanner/mcp_server.py"],
+      "command": "rag-mcp-server",
+      "args": [],
       "env": {}
     }
   }
