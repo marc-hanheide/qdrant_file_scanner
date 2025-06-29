@@ -6,9 +6,7 @@ This server provides access to the RAG document database through the Model Conte
 It implements a search tool that allows querying documents indexed in Qdrant.
 """
 
-import asyncio
 import logging
-import fnmatch
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from contextlib import asynccontextmanager
@@ -217,7 +215,7 @@ def find_files_about(topic: str) -> str:
     Args:
         topic: What you're looking for (e.g., "machine learning papers", "budget reports", "meeting notes")
     """
-    return f"""I need to find files about "{topic}". Please use the rag_search tool to search for relevant documents. 
+    return f"""I need to find files about "{topic}". Please use the rag_search tool to search for relevant documents.
 
 After finding the results:
 1. List the most relevant files with their paths

@@ -6,7 +6,6 @@ Memory monitoring tool for RAG system
 import psutil
 import os
 import yaml
-import time
 from rag_file_monitor.embedding_manager import EmbeddingManager
 
 
@@ -40,7 +39,7 @@ def main():
 
     # Test embedding generation (this loads the model)
     print("\nGenerating test embedding...")
-    embeddings = em.generate_embeddings(["This is a test document for memory monitoring"])
+    em.generate_embeddings(["This is a test document for memory monitoring"])
     print(f"Memory after loading model: {get_process_memory_mb():.1f} MB")
 
     # Show updated stats

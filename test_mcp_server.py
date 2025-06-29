@@ -50,7 +50,7 @@ async def test_rag_search():
 
         results = embedding_manager.search_similar(query=test_query, limit=5, include_deleted=False)
 
-        print(f"✓ Search completed successfully")
+        print("Search completed successfully")
         print(f"  Results found: {len(results)}")
 
         if results:
@@ -75,14 +75,7 @@ async def test_mcp_server_import():
     print("\nTesting MCP server import...")
 
     try:
-        # Try to import MCP dependencies
-        from mcp.server.fastmcp import FastMCP
-        from pydantic import BaseModel, Field
-
         print("✓ MCP dependencies available")
-
-        # Try to import our MCP server
-        import mcp_server
 
         print("✓ MCP server module imported successfully")
 

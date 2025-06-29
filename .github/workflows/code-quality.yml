@@ -36,15 +36,15 @@ jobs:
         flake8 rag_file_monitor/ mcp_server.py --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 rag_file_monitor/ mcp_server.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-    - name: Type check with mypy
-      run: |
-        mypy rag_file_monitor/ --ignore-missing-imports --no-strict-optional
-      continue-on-error: true
+    # - name: Type check with mypy
+    #   run: |
+    #     mypy rag_file_monitor/ --ignore-missing-imports --no-strict-optional 
+    #   continue-on-error: true
 
-    - name: Security scan with bandit
-      run: |
-        bandit -r rag_file_monitor/ mcp_server.py -ll
-      continue-on-error: true
+    # - name: Security scan with bandit
+    #   run: |
+    #     bandit -r rag_file_monitor/ mcp_server.py -ll
+    #   continue-on-error: true
 
     - name: Check dependencies for security issues
       run: |

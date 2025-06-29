@@ -20,7 +20,7 @@ import logging
 import fnmatch
 import os
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import json
 
@@ -273,7 +273,7 @@ class RAGSearchCLI:
             if result.get("deletion_timestamp"):
                 try:
                     return datetime.fromisoformat(result["deletion_timestamp"])
-                except:
+                except (ValueError, TypeError):
                     pass
 
         except Exception:
@@ -294,19 +294,19 @@ class RAGSearchCLI:
             try:
                 days = int(date_str.split()[0])
                 return (datetime.now() - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
-            except:
+            except (ValueError, TypeError):
                 pass
         elif date_str.endswith(" weeks ago"):
             try:
                 weeks = int(date_str.split()[0])
                 return (datetime.now() - timedelta(weeks=weeks)).replace(hour=0, minute=0, second=0, microsecond=0)
-            except:
+            except (ValueError, TypeError):
                 pass
         elif date_str.endswith(" months ago"):
             try:
                 months = int(date_str.split()[0])
                 return (datetime.now() - timedelta(days=months * 30)).replace(hour=0, minute=0, second=0, microsecond=0)
-            except:
+            except (ValueError, TypeError):
                 pass
 
         # Try standard date formats
@@ -443,25 +443,25 @@ Examples:
   rag-search "machine learning algorithms"
   rag-search --query "machine learning algorithms"
   echo "machine learning" | rag-search
-  
+
   # Search with glob filter
   rag-search "budget report" --glob "*.pdf"
-  
+
   # Find similar files
   rag-search --example ~/Documents/report.pdf
-  
+
   # Search by file pattern only
   rag-search --glob-only "*.pdf"
-  
+
   # With additional options
   rag-search "project status" --limit 5 --min-score 0.7
-  
+
   # Different output formats
   rag-search "test" --verbose
   rag-search "test" --brief
   rag-search "test" --document
   rag-search "test" --json
-  
+
   # Bulk delete with confirmation
   rag-search "temp file" --delete --dry-run
         """,

@@ -6,7 +6,6 @@ Utility script to manage deleted documents in Qdrant
 import yaml
 import click
 import logging
-from datetime import datetime
 from .embedding_manager import EmbeddingManager
 
 

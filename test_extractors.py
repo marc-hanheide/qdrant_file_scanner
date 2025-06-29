@@ -14,7 +14,6 @@ def test_pptx_extraction():
 
     try:
         from pptx import Presentation
-        from pptx.util import Inches
 
         # Create a temporary PPTX file for testing
         prs = Presentation()
@@ -38,8 +37,9 @@ def test_pptx_extraction():
         extractor = TextExtractor()
         extracted_text = extractor.extract_text(tmp_path)
 
-        print(f"Extracted PPTX text:\n{extracted_text}")
-        print(f"✓ PPTX extraction successful")
+        print("Extracted PPTX text:")
+        print(extracted_text)
+        print("✓ PPTX extraction successful")
 
         # Cleanup
         os.unlink(tmp_path)
@@ -87,8 +87,9 @@ def test_xlsx_extraction():
         extractor = TextExtractor()
         extracted_text = extractor.extract_text(tmp_path)
 
-        print(f"Extracted XLSX text:\n{extracted_text}")
-        print(f"✓ XLSX extraction successful")
+        print("Extracted XLSX text:")
+        print(extracted_text)
+        print("✓ XLSX extraction successful")
 
         # Cleanup
         os.unlink(tmp_path)

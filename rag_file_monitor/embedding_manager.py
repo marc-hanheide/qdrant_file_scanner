@@ -95,7 +95,7 @@ class EmbeddingManager:
     def _load_file_hashes(self):
         """Load existing file hashes from Qdrant metadata using pagination"""
         try:
-            self.logger.info(f"Loading existing file hashes from Qdrant")
+            self.logger.info("Loading existing file hashes from Qdrant")
 
             # Use pagination to avoid loading all points at once
             offset = None
@@ -168,7 +168,6 @@ class EmbeddingManager:
 
         while start < len(text):
             end = start + chunk_size
-            original_end = end
 
             # Try to break at word boundary
             if end < len(text):

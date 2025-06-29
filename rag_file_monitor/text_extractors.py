@@ -3,10 +3,8 @@ Text extraction utilities for various file formats
 """
 
 import logging
-import magic
 import chardet
 from pathlib import Path
-from typing import Optional
 
 # PDF extraction
 try:
