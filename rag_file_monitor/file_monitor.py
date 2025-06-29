@@ -71,16 +71,19 @@ class FileMonitorHandler(FileSystemEventHandler):
     def on_created(self, event):
         if not event.is_directory and self.should_process_file(event.src_path):
             self.logger.info(f"New file detected: {event.src_path}")
+            print(f"New file detected: {event.src_path}", file=sys.stderr)
             self.process_file(event.src_path)
             
     def on_modified(self, event):
         if not event.is_directory and self.should_process_file(event.src_path):
             self.logger.info(f"File modified: {event.src_path}")
+            print(f"File modified: {event.src_path}", file=sys.stderr)
             self.process_file(event.src_path)
             
     def on_deleted(self, event):
         if not event.is_directory:
             self.logger.info(f"File deleted: {event.src_path}")
+            print(f"File deleted: {event.src_path}", file=sys.stderr)
             if self.delete_embeddings_on_deletion:
                 self.embedding_manager.delete_document(event.src_path)
             else:
@@ -89,6 +92,7 @@ class FileMonitorHandler(FileSystemEventHandler):
     def on_moved(self, event):
         if not event.is_directory:
             self.logger.info(f"File moved: {event.src_path} -> {event.dest_path}")
+            print(f"File moved: {event.src_path} -> {event.dest_path}", file=sys.stderr)
             if self.delete_embeddings_on_deletion:
                 self.embedding_manager.delete_document(event.src_path)
             else:
@@ -243,8 +247,16 @@ class FileMonitor:
             
         try:
             self.logger.info("File monitoring active. Press Ctrl+C to stop.")
+            idle_check_counter = 0
             while True:
                 time.sleep(1)
+                idle_check_counter += 1
+                
+                # Check for idle model every 1 minutes (60 seconds)
+                if idle_check_counter % 60 == 0:
+                    self.embedding_manager.check_and_unload_idle_model()
+                    idle_check_counter = 0  # Reset counter
+                    
         except KeyboardInterrupt:
             self.logger.info("Stopping file monitoring...")
             for observer in self.observers:

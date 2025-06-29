@@ -5,8 +5,9 @@ Embedding generation and Qdrant database management
 import logging
 import uuid
 import fnmatch
+import threading
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -42,7 +43,14 @@ class EmbeddingManager:
             
         self.model_name = config['embedding']['model_name']
         self.embedding_model = None  # Load lazily
+        self.model_last_used = None  # Track when model was last used
+        self.model_lock = threading.Lock()  # Thread safety for model operations
         self.logger.info(f"Embedding model configured: {self.model_name}")
+        
+        # Memory optimization settings
+        self.unload_after_minutes = config.get('memory', {}).get('unload_model_after_idle_minutes', 30)
+        self.operation_counter = 0
+        self.gc_frequency = config.get('memory', {}).get('force_gc_after_operations', 100)
         
         # Initialize Qdrant client
         if QdrantClient is None:
@@ -195,6 +203,13 @@ class EmbeddingManager:
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for list of texts with memory optimization"""
         try:
+            # Increment operation counter and check for GC
+            self.operation_counter += 1
+            if self.operation_counter % self.gc_frequency == 0:
+                import gc
+                gc.collect()
+                self.logger.debug(f"Forced garbage collection after {self.operation_counter} operations")
+            
             # Process in smaller batches to reduce memory usage
             batch_size = self.config.get('memory', {}).get('embedding_batch_size', 32)  # Adjust based on your system's memory
             all_embeddings = []
@@ -615,20 +630,34 @@ class EmbeddingManager:
             return []
     
     def _get_embedding_model(self):
-        """Lazy loading of embedding model to save memory"""
-        if self.embedding_model is None:
-            self.logger.info(f"Loading embedding model: {self.model_name}")
-            # Use local cache directory to avoid downloading model every time
-            cache_folder = self.config.get('embedding', {}).get('cache_folder', './models')
-            self.embedding_model = SentenceTransformer(self.model_name, cache_folder=cache_folder)
-        return self.embedding_model
+        """Lazy loading of embedding model with automatic unloading after idle time"""
+        with self.model_lock:
+            # Check if model should be unloaded due to idle time
+            if (self.embedding_model is not None and 
+                self.model_last_used is not None and 
+                datetime.now() - self.model_last_used > timedelta(minutes=self.unload_after_minutes)):
+                self.logger.info(f"Unloading embedding model after {self.unload_after_minutes} minutes of inactivity")
+                self.unload_embedding_model()
+            
+            # Load model if not already loaded
+            if self.embedding_model is None:
+                self.logger.info(f"Loading embedding model: {self.model_name}")
+                # Use local cache directory to avoid downloading model every time
+                cache_folder = self.config.get('embedding', {}).get('cache_folder', './models')
+                self.embedding_model = SentenceTransformer(self.model_name, cache_folder=cache_folder)
+            
+            # Update last used timestamp
+            self.model_last_used = datetime.now()
+            return self.embedding_model
     
     def unload_embedding_model(self):
         """Unload embedding model to free memory when not needed"""
+        # Note: This method should be called with model_lock held
         if self.embedding_model is not None:
             self.logger.info("Unloading embedding model to free memory")
             del self.embedding_model
             self.embedding_model = None
+            self.model_last_used = None
             import gc
             gc.collect()
     
@@ -700,6 +729,26 @@ class EmbeddingManager:
             except Exception:
                 # Last resort: return a safe placeholder
                 return "[TEXT_ENCODING_ERROR]"
+
+    def check_and_unload_idle_model(self):
+        """Check if model has been idle and unload it if necessary"""
+        with self.model_lock:
+            if (self.embedding_model is not None and 
+                self.model_last_used is not None and 
+                datetime.now() - self.model_last_used > timedelta(minutes=self.unload_after_minutes)):
+                self.logger.info(f"Unloading idle embedding model after {self.unload_after_minutes} minutes")
+                self.unload_embedding_model()
+                return True
+        return False
+    
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get memory usage statistics"""
+        return {
+            'file_hashes_count': len(self.file_hashes),
+            'embedding_model_loaded': self.embedding_model is not None,
+            'model_last_used': self.model_last_used.isoformat() if self.model_last_used else None,
+            'operation_counter': self.operation_counter
+        }
 
     def _debug_text_content(self, text_content: str, file_path: str) -> Dict[str, Any]:
         """Debug helper to analyze text content that might cause embedding issues"""

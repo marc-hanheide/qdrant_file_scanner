@@ -205,13 +205,16 @@ def get_database_stats() -> str:
             collection_name=embedding_manager.collection_name
         )
         
+        # Get memory statistics
+        memory_stats = embedding_manager.get_memory_stats()
         
         stats = {
             "collection_name": embedding_manager.collection_name,
             "collection_status": str(collection_info.status),
             "vector_size": embedding_manager.vector_size,
             "embedding_model": embedding_manager.model_name,
-            "indexed_files": len(embedding_manager.file_hashes)
+            "indexed_files": len(embedding_manager.file_hashes),
+            "memory_stats": memory_stats
         }
         
         return yaml.dump(stats, default_flow_style=False)
