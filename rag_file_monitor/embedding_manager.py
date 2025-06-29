@@ -584,7 +584,7 @@ class EmbeddingManager:
             if self.embedding_model is None:
                 self.logger.info(f"Loading embedding model: {self.model_name}")
                 # Use local cache directory to avoid downloading model every time
-                cache_folder = self.config.get("embedding", {}).get("cache_folder", "./models")
+                cache_folder = self.config.get("embedding", {}).get("cache_folder", "/tmp/rag-models-cache")
                 self.embedding_model = SentenceTransformer(self.model_name, cache_folder=cache_folder)
 
             # Update last used timestamp
