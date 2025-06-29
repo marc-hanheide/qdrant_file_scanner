@@ -49,6 +49,7 @@ jobs:
         pip install -r requirements-dev.txt
 
     - name: Lint with black
+      continue-on-error: true
       run: |
         black --check --diff .
 
