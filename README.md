@@ -10,6 +10,8 @@ A Python tool that monitors directories for file changes and automatically index
 - **Change Detection**: Only reprocesses files when they actually change
 - **Chunking**: Intelligently splits large documents into smaller chunks
 - **Configurable**: YAML-based configuration for all settings
+- **Search CLI**: Comprehensive command-line tool for searching and managing documents
+- **MCP Server**: Model Context Protocol server for integration with AI assistants
 
 ## Installation
 
@@ -60,6 +62,13 @@ pip install -e .
 
 ## Usage
 
+After installation, you have access to several command-line tools:
+
+- **`rag-monitor`**: Main file monitoring and indexing tool
+- **`rag-search`**: Search and manage documents in the database
+- **`rag-manage`**: Manage deleted documents and database maintenance
+- **`rag-mcp-server`**: Run the Model Context Protocol server
+
 ### Initial Setup and Monitoring
 ```bash
 # Activate virtual environment (if not already active)
@@ -101,6 +110,26 @@ rag-manage purge-deleted /path/to/file.txt
 # Clean up old deleted documents (older than 30 days)
 rag-manage cleanup-deleted --older-than-days 30
 ```
+
+### Searching Documents
+
+The `rag-search` CLI tool provides comprehensive search capabilities:
+
+```bash
+# Semantic search
+rag-search --query "machine learning algorithms"
+
+# Find similar documents
+rag-search --example ~/Documents/research_paper.pdf
+
+# Search by file pattern
+rag-search --glob "*.pdf" --start-date "2024-01-01"
+
+# Delete documents matching a pattern
+rag-search --glob "*/temp/*" --delete --dry-run
+```
+
+For detailed usage examples, see [RAG_SEARCH_CLI.md](RAG_SEARCH_CLI.md).
 
 ## How It Works
 

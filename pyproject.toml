@@ -27,6 +27,7 @@ dependencies = [
 [project.scripts]
 rag-monitor = "rag_file_monitor.file_monitor:main"
 rag-manage = "rag_file_monitor.manage_deleted:cli"
+rag-search = "rag_file_monitor.search_cli:main"
 rag-mcp-server = "mcp_server:main"
 
 [build-system]
