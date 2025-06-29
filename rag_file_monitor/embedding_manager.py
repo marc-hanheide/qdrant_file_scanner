@@ -618,7 +618,9 @@ class EmbeddingManager:
         """Lazy loading of embedding model to save memory"""
         if self.embedding_model is None:
             self.logger.info(f"Loading embedding model: {self.model_name}")
-            self.embedding_model = SentenceTransformer(self.model_name)
+            # Use local cache directory to avoid downloading model every time
+            cache_folder = self.config.get('embedding', {}).get('cache_folder', './models')
+            self.embedding_model = SentenceTransformer(self.model_name, cache_folder=cache_folder)
         return self.embedding_model
     
     def unload_embedding_model(self):
