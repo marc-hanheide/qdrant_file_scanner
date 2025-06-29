@@ -5,7 +5,7 @@ Embedding generation and Qdrant database management
 import logging
 import uuid
 import fnmatch
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 try:
@@ -196,18 +196,31 @@ class EmbeddingManager:
         """Generate embeddings for list of texts with memory optimization"""
         try:
             # Process in smaller batches to reduce memory usage
-            batch_size = 32  # Adjust based on your system's memory
+            batch_size = self.config.get('memory', {}).get('embedding_batch_size', 32)  # Adjust based on your system's memory
             all_embeddings = []
             
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
+                # Ensure all text chunks are properly UTF-8 encoded
+                batch = [self._ensure_utf8_encoding(text) for text in batch]
                 batch_embeddings = self._get_embedding_model().encode(
                     batch, 
                     convert_to_tensor=False,
-                    show_progress_bar=False,
-                    batch_size=min(len(batch), 16)  # Internal batch size
+                    show_progress_bar=True,
+                    batch_size=min(len(batch), 32)  # Internal batch size
                 )
-                all_embeddings.extend(batch_embeddings.tolist())
+                
+                # Validate and clean embeddings
+                validated_embeddings = []
+                for j, embedding in enumerate(batch_embeddings.tolist()):
+                    validated_embedding = self._validate_embedding(embedding, texts[i + j])
+                    if validated_embedding is not None:
+                        validated_embeddings.append(validated_embedding)
+                    else:
+                        # Skip this text if embedding validation fails
+                        self.logger.warning(f"Skipping text chunk due to invalid embedding: '{texts[i + j][:100]}...'")
+                
+                all_embeddings.extend(validated_embeddings)
                 
                 # Optional: Force garbage collection for large batches
                 if len(texts) > 100 and i % (batch_size * 4) == 0:
@@ -245,8 +258,15 @@ class EmbeddingManager:
                 # Generate embeddings for this batch
                 embeddings = self.generate_embeddings(chunk_batch)
                 if not embeddings:
-                    self.logger.error(f"No embeddings generated for batch {batch_start}-{batch_end} of {file_path}")
-                    continue
+                    error_msg = f"No embeddings generated for batch {batch_start}-{batch_end} of {file_path}"
+                    self.logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+                
+                # Ensure embeddings match chunks after validation
+                if len(embeddings) != len(chunk_batch):
+                    self.logger.warning(f"Embedding count mismatch for {file_path}: {len(embeddings)} embeddings vs {len(chunk_batch)} chunks. Adjusting chunks to match embeddings.")
+                    # Adjust chunks to match validated embeddings
+                    chunk_batch = chunk_batch[:len(embeddings)]
                 
                 # Create points for Qdrant
                 points = []
@@ -283,10 +303,15 @@ class EmbeddingManager:
                     points.append(point)
                 
                 # Upload batch to Qdrant
-                self.client.upsert(
-                    collection_name=self.collection_name,
-                    points=points
-                )
+                try:
+                    self.client.upsert(
+                        collection_name=self.collection_name,
+                        points=points
+                    )
+                except Exception as e:
+                    error_msg = f"Failed to upsert points to Qdrant for {file_path}: {str(e)}"
+                    self.logger.error(error_msg)
+                    raise RuntimeError(error_msg)
                 
                 total_indexed += len(points)
                 
@@ -304,7 +329,9 @@ class EmbeddingManager:
             self.logger.info(f"Indexed {total_indexed} chunks from {file_path}")
             
         except Exception as e:
-            self.logger.error(f"Error indexing document {file_path}: {str(e)}")
+            error_msg = f"Error indexing document {file_path}: {str(e)}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
             
     def delete_document(self, file_path: str, force_delete: bool = False):
         """Delete all chunks for a document from Qdrant"""
@@ -395,7 +422,7 @@ class EmbeddingManager:
         except Exception as e:
             self.logger.error(f"Error marking document as deleted {file_path}: {str(e)}")
             
-    def _build_glob_filter_conditions(self, glob_pattern: str) -> List[FieldCondition]:
+    def _build_glob_filter_conditions(self, glob_pattern: str) -> List[Any]:
         """
         Convert glob pattern to Qdrant filter conditions.
         
@@ -602,3 +629,99 @@ class EmbeddingManager:
             self.embedding_model = None
             import gc
             gc.collect()
+    
+    def _validate_embedding(self, embedding: List[float], text_sample: str = "") -> Optional[List[float]]:
+        """Validate embedding vector to ensure it's suitable for Qdrant"""
+        try:
+            import math
+            
+            # Check if embedding is None or empty
+            if embedding is None or len(embedding) == 0:
+                self.logger.warning(f"Empty or None embedding for text: '{text_sample[:50]}...'")
+                return None
+            
+            # Check expected dimensions
+            if len(embedding) != self.vector_size:
+                self.logger.warning(f"Embedding dimension mismatch: expected {self.vector_size}, got {len(embedding)} for text: '{text_sample[:50]}...'")
+                return None
+            
+            # Check for NaN or infinity values and provide detailed analysis
+            invalid_indices = []
+            for i, value in enumerate(embedding):
+                if not isinstance(value, (int, float)):
+                    self.logger.warning(f"Non-numeric value at index {i} in embedding for text: '{text_sample[:50]}...'")
+                    return None
+                if math.isnan(value):
+                    invalid_indices.append(f"NaN at index {i}")
+                elif math.isinf(value):
+                    invalid_indices.append(f"Inf at index {i}")
+            
+            if invalid_indices:
+                self.logger.error(f"Invalid embedding values found: {invalid_indices[:5]} for text: '{text_sample[:100]}...'")
+                # Log additional debug info for problematic text
+                return None
+            
+            # Check for suspicious patterns (all zeros, all same values)
+            unique_values = set(embedding)
+            if len(unique_values) == 1:
+                self.logger.warning(f"Embedding contains only one unique value ({list(unique_values)[0]}) for text: '{text_sample[:50]}...'")
+                # Don't reject, but log for investigation
+            
+            # Convert to regular floats to ensure JSON serialization
+            validated_embedding = [float(v) for v in embedding]
+            
+            return validated_embedding
+            
+        except Exception as e:
+            self.logger.error(f"Error validating embedding: {str(e)} for text: '{text_sample[:50]}...'")
+            return None
+        
+    def _ensure_utf8_encoding(self, text: str) -> str:
+        """Ensure text is properly UTF-8 encoded and clean"""
+        if not isinstance(text, str):
+            return str(text)
+        
+        try:
+            # Remove or replace problematic characters
+            # Replace null bytes and other control characters
+            cleaned_text = text.replace('\x00', '').replace('\ufffd', '')
+            
+            # Ensure the text can be encoded as UTF-8
+            cleaned_text.encode('utf-8')
+            
+            return cleaned_text
+        except (UnicodeEncodeError, UnicodeDecodeError) as e:
+            self.logger.warning(f"Encoding issue with text, attempting to fix: {str(e)}")
+            # Try to encode and decode to fix encoding issues
+            try:
+                return text.encode('utf-8', errors='ignore').decode('utf-8')
+            except Exception:
+                # Last resort: return a safe placeholder
+                return "[TEXT_ENCODING_ERROR]"
+
+    def _debug_text_content(self, text_content: str, file_path: str) -> Dict[str, Any]:
+        """Debug helper to analyze text content that might cause embedding issues"""
+        debug_info = {
+            'file_path': file_path,
+            'content_length': len(text_content),
+            'content_preview': text_content[:200] + '...' if len(text_content) > 200 else text_content,
+            'encoding_issues': [],
+            'special_chars': []
+        }
+        
+        try:
+            # Check for encoding issues
+            text_content.encode('utf-8')
+        except UnicodeEncodeError as e:
+            debug_info['encoding_issues'].append(str(e))
+        
+        # Check for unusual characters that might cause issues
+        import unicodedata
+        unusual_chars = set()
+        for char in text_content:
+            if unicodedata.category(char) in ['Cc', 'Cf', 'Cs', 'Co', 'Cn']:  # Control and other problematic categories
+                unusual_chars.add(f"'{char}' ({unicodedata.name(char, 'UNKNOWN')})")
+        
+        debug_info['special_chars'] = list(unusual_chars)[:10]  # Limit to first 10
+        
+        return debug_info
