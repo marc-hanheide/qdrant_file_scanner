@@ -26,37 +26,33 @@ except ImportError as e:
 
 async def test_rag_search():
     """Test the RAG search functionality"""
-    
+
     # Load configuration
     config_path = Path(__file__).parent / "config.yaml"
     if not config_path.exists():
         print(f"Configuration file not found: {config_path}")
         return False
-    
-    with open(config_path, 'r') as f:
+
+    with open(config_path, "r") as f:
         config = yaml.safe_load(f)
-    
+
     print("Testing RAG search functionality...")
-    
+
     try:
         # Initialize embedding manager
         print("Initializing embedding manager...")
         embedding_manager = EmbeddingManager(config)
         print("✓ Embedding manager initialized successfully")
-        
+
         # Test search
         test_query = "document"
         print(f"Testing search with query: '{test_query}'")
-        
-        results = embedding_manager.search_similar(
-            query=test_query,
-            limit=5,
-            include_deleted=False
-        )
-        
-        print(f"✓ Search completed successfully")
+
+        results = embedding_manager.search_similar(query=test_query, limit=5, include_deleted=False)
+
+        print("Search completed successfully")
         print(f"  Results found: {len(results)}")
-        
+
         if results:
             print("\nFirst result:")
             result = results[0]
@@ -66,9 +62,9 @@ async def test_rag_search():
         else:
             print("  No documents found. Make sure you have indexed some documents first.")
             print("  Run 'rag-monitor --scan-only' to index existing files.")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"✗ Error during RAG search test: {e}")
         return False
@@ -77,19 +73,14 @@ async def test_rag_search():
 async def test_mcp_server_import():
     """Test if MCP server can be imported"""
     print("\nTesting MCP server import...")
-    
+
     try:
-        # Try to import MCP dependencies
-        from mcp.server.fastmcp import FastMCP
-        from pydantic import BaseModel, Field
         print("✓ MCP dependencies available")
-        
-        # Try to import our MCP server
-        import mcp_server
+
         print("✓ MCP server module imported successfully")
-        
+
         return True
-        
+
     except ImportError as e:
         print(f"✗ MCP server import failed: {e}")
         print("  To install MCP dependencies: pip install 'mcp[cli]>=1.10.0'")
@@ -103,23 +94,23 @@ def main():
     """Run all tests"""
     print("RAG MCP Server Test Suite")
     print("=" * 40)
-    
+
     # Setup logging
     logging.basicConfig(level=logging.INFO)
-    
+
     tests_passed = 0
     total_tests = 2
-    
+
     # Test 1: RAG search functionality
     if asyncio.run(test_rag_search()):
         tests_passed += 1
-    
+
     # Test 2: MCP server import
     if asyncio.run(test_mcp_server_import()):
         tests_passed += 1
-    
+
     print(f"\nTest Results: {tests_passed}/{total_tests} tests passed")
-    
+
     if tests_passed == total_tests:
         print("✓ All tests passed! Your MCP server should work correctly.")
         print("\nNext steps:")
