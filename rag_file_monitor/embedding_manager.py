@@ -56,8 +56,8 @@ class EmbeddingManager:
         
         self.collection_name = qdrant_config['collection_name']
         self.vector_size = qdrant_config['vector_size']
-        self.vector_name = "fast-all-minilm-l6-v2"  # Named vector for the collection
-        
+        # Get vector name from config with default fallback
+        self.vector_name = qdrant_config.get('vector_name', 'fast-all-minilm-l6-v2')
         # Ensure collection exists
         self._ensure_collection_exists()
         
