@@ -111,12 +111,14 @@ class FileMonitorHandler(FileSystemEventHandler):
                 self.logger.warning(f"No text extracted from {file_path}")
                 return
                 
-            # Index the document
+            # Index the document - this now raises exceptions on failure
             self.embedding_manager.index_document(file_path, text_content, current_hash)
             self.logger.info(f"Successfully indexed: {file_path}")
             
         except Exception as e:
-            self.logger.error(f"Error processing {file_path}: {str(e)}")
+            self.logger.error(f"Failed to process {file_path}: {str(e)}")
+            raise e  # Raise the exception to log it properly
+            # Don't raise the exception to avoid crashing the monitor for single file failures
 
 
 class FileMonitor:
