@@ -319,7 +319,7 @@ class RAGSearchCLI:
         raise ValueError(f"Could not parse date: {date_str}")
 
     def format_results(self, results: List[Dict], verbose: bool = False, 
-                      files_only: bool = True) -> str:
+                      files_only: bool = True, document_mode: bool = False) -> str:
         """Format search results for display"""
         if not results:
             return "No results found." if not files_only else ""
@@ -328,6 +328,10 @@ class RAGSearchCLI:
             # Return only unique file paths
             file_paths = sorted(set(result.get('file_path', '') for result in results))
             return '\n'.join(file_paths)
+        
+        if document_mode:
+            # Generate LLM-friendly markdown document
+            return self._format_as_markdown_document(results)
         
         output = []
         output.append(f"Found {len(results)} results:\n")
@@ -362,6 +366,64 @@ class RAGSearchCLI:
         
         return '\n'.join(output)
 
+    def _format_as_markdown_document(self, results: List[Dict]) -> str:
+        """Format results as a comprehensive markdown document for LLM consumption"""
+        if not results:
+            return "# Search Results\n\nNo results found."
+        
+        # Group results by file to avoid duplicates
+        files_dict = {}
+        for result in results:
+            file_path = result.get('file_path', 'Unknown')
+            if file_path not in files_dict:
+                files_dict[file_path] = []
+            files_dict[file_path].append(result)
+        
+        output = []
+        output.append("# Search Results\n")
+        output.append(f"Found {len(results)} document chunks from {len(files_dict)} unique files.\n")
+        
+        for file_path, file_results in files_dict.items():
+            # Sort chunks by chunk index
+            file_results.sort(key=lambda x: x.get('chunk_index', 0))
+            
+            output.append(f"## [`{file_path}`](file://{file_path})")
+            output.append("")  # Empty line after header
+            
+            # File metadata
+            first_result = file_results[0]
+            is_deleted = first_result.get('is_deleted', False)
+            
+            if is_deleted:
+                output.append("**Status:** DELETED")
+                if first_result.get('deletion_timestamp'):
+                    output.append(f"**Deleted:** {first_result.get('deletion_timestamp')}")
+            
+            output.append(f"**Number of chunks:** {len(file_results)}\n")
+            
+            # Show all chunks for this file
+            for i, result in enumerate(file_results):
+                chunk_index = result.get('chunk_index', 0)
+                score = result.get('score', 0.0)
+                document = result.get('document', '')
+                
+                output.append(f"\n### Chunk {chunk_index} (Similarity Score: {score:.4f})")
+                
+                if document:
+                    # Format the document content as a markdown quote
+                    # Split into lines and prefix each with >
+                    document_lines = document.split('\n')
+                    quoted_lines = [f"> {line}" if line.strip() else ">" for line in document_lines]
+                    output.append("\n".join(quoted_lines))
+                else:
+                    output.append("> *No content available*")
+                
+                output.append("")  # Empty line for spacing
+            
+            output.append("---\n")  # Separator between files
+        
+        return '\n'.join(output)
+
 
 def create_parser():
     """Create the argument parser for the CLI"""
@@ -390,6 +452,7 @@ Examples:
   # Different output formats
   rag-search "test" --verbose
   rag-search "test" --brief
+  rag-search "test" --document
   rag-search "test" --json
   
   # Bulk delete with confirmation
@@ -412,9 +475,9 @@ Examples:
     parser.add_argument('--glob', '-g', type=str,
                        help='Glob pattern to filter results by file path')
     parser.add_argument('--limit', '-l', type=int, default=10,
-                       help='Maximum number of results (default: 10)')
+                       help='Maximum number of results (default: 10, ignored for --glob-only)')
     parser.add_argument('--min-score', '-s', type=float, default=0.0,
-                       help='Minimum similarity score (0.0-1.0, default: 0.0)')
+                       help='Minimum similarity score (0.0-1.0, default: 0.0, ignored for --glob-only)')
     parser.add_argument('--include-deleted', action='store_true',
                        help='Include deleted documents in results')
     
@@ -430,6 +493,8 @@ Examples:
                              help='Show detailed information for each result')
     output_group.add_argument('--brief', '-b', action='store_true',
                              help='Show brief format with scores')
+    output_group.add_argument('--document', action='store_true',
+                             help='Output as markdown document with full content (LLM-friendly)')
     output_group.add_argument('--json', action='store_true',
                              help='Output results as JSON')
     # Note: files-only is now the default, no flag needed
@@ -524,6 +589,7 @@ def main():
         # Determine output format
         files_only = True  # Default mode
         verbose = False
+        document_mode = False
         
         if args.verbose:
             files_only = False
@@ -531,6 +597,9 @@ def main():
         elif args.brief:
             files_only = False
             verbose = False
+        elif args.document:
+            files_only = False
+            document_mode = True
         
         # Output results
         if args.json:
@@ -539,7 +608,8 @@ def main():
             output = cli.format_results(
                 results, 
                 verbose=verbose, 
-                files_only=files_only
+                files_only=files_only,
+                document_mode=document_mode
             )
             if output:  # Only print if there's content
                 print(output)
