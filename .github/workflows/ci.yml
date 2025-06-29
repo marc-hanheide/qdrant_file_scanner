@@ -91,7 +91,7 @@ jobs:
 
     - name: Run safety check
       run: |
-        pip freeze | safety check --stdin || true
+        safety scan || true
 
   build-docker:
     runs-on: ubuntu-latest
