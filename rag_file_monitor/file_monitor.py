@@ -195,10 +195,14 @@ class FileMonitor:
             
             # Second pass: process files with progress bar
             if files_to_process:
-                for file_path in tqdm(files_to_process, desc=f"Processing directory {os.path.basename(directory)}", unit="files", file=sys.stderr, colour='green'):
-                    self.logger.debug(f"Processing existing file: {file_path}")
-                    handler.process_file(file_path)
-                    total_files += 1
+                with tqdm(files_to_process, desc=f"Processing {os.path.basename(directory)}", unit="files", file=sys.stderr, colour='green') as pbar:
+                    for file_path in pbar:
+                        # Update progress bar with current file (last 30 chars)
+                        current_file = file_path[-30:] if len(file_path) > 30 else file_path
+                        pbar.set_postfix_str(f"\"...{current_file}\"")
+                        self.logger.debug(f"Processing existing file: {file_path}")
+                        handler.process_file(file_path)
+                        total_files += 1
             else:
                 self.logger.info(f"No files to process in {directory}")
                         
