@@ -46,7 +46,3 @@ jobs:
     #     bandit -r rag_file_monitor/ mcp_server.py -ll
     #   continue-on-error: true
 
-    - name: Check dependencies for security issues
-      run: |
-        pip freeze | safety check --stdin
-      continue-on-error: true
