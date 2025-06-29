@@ -17,6 +17,7 @@ from watchdog.events import FileSystemEventHandler
 
 from .text_extractors import TextExtractor
 from .embedding_manager import EmbeddingManager
+from tqdm import tqdm
 
 
 class FileMonitorHandler(FileSystemEventHandler):
@@ -184,15 +185,22 @@ class FileMonitor:
                 
             self.logger.info(f"Scanning directory: {directory}")
             
+            # First pass: count total files to process for progress bar
+            files_to_process = []
             for root, dirs, files in os.walk(directory):
                 for file in files:
                     file_path = os.path.join(root, file)
                     if handler.should_process_file(file_path):
-                        self.logger.debug(f"Processing existing file: {file_path}")
-                        handler.process_file(file_path)
-                        total_files += 1
-                    else:
-                        self.logger.debug(f"Skipping file: {file_path} (does not match criteria)")
+                        files_to_process.append(file_path)
+            
+            # Second pass: process files with progress bar
+            if files_to_process:
+                for file_path in tqdm(files_to_process, desc=f"Processing directory {os.path.basename(directory)}", unit="files", file=sys.stderr, colour='green'):
+                    self.logger.debug(f"Processing existing file: {file_path}")
+                    handler.process_file(file_path)
+                    total_files += 1
+            else:
+                self.logger.info(f"No files to process in {directory}")
                         
         self.logger.info(f"Finished scanning. Processed {total_files} files.")
         

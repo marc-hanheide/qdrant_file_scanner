@@ -206,7 +206,7 @@ class EmbeddingManager:
                 batch_embeddings = self._get_embedding_model().encode(
                     batch, 
                     convert_to_tensor=False,
-                    show_progress_bar=True,
+                    show_progress_bar=False,
                     batch_size=min(len(batch), 32)  # Internal batch size
                 )
                 
