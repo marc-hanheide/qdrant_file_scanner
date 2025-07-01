@@ -69,16 +69,20 @@ The tool supports two configuration formats for directories:
 directories:
   "/path/to/documents":
     ignore_extensions: []  # Use all global file_extensions
+    max_filesize: 0  # Use global max_file_size_mb setting
   "/path/to/emails":
     ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations
+    max_filesize: 5  # Maximum 5MB per file in this directory
   "/path/to/downloads":
     ignore_extensions: [".html", ".htm", ".rtf"]  # Skip web files and RTF
+    max_filesize: 2  # Maximum 2MB per file in downloads (temporary files)
 ```
 
 Each directory can specify:
 - `ignore_extensions`: Array of file extensions to skip for this directory
+- `max_filesize`: Maximum file size in MB for files in this directory (0 = use global default)
 - Extensions are applied on top of the global `file_extensions` list
-- Empty array means all global extensions will be processed
+- Empty array for ignore_extensions means all global extensions will be processed
 
 #### Legacy Format (Still Supported)
 ```yaml
@@ -99,12 +103,16 @@ Here are some practical examples of how to configure directories with per-direct
 directories:
   "/Users/username/Documents/Papers":
     ignore_extensions: []  # Process all file types
+    max_filesize: 20  # Allow large academic papers up to 20MB
   "/Users/username/Documents/Email_Attachments":
     ignore_extensions: [".html", ".htm"]  # Skip HTML emails
+    max_filesize: 5  # Email attachments usually smaller
   "/Users/username/Downloads":
     ignore_extensions: [".html", ".htm", ".rtf", ".xlsx"]  # Skip web files and spreadsheets
+    max_filesize: 2  # Downloads are often temporary, keep small
   "/Users/username/Desktop":
     ignore_extensions: [".pptx", ".xlsx"]  # Skip presentations and spreadsheets on desktop
+    max_filesize: 10  # Medium size limit for desktop files
 ```
 
 #### Example 2: Business Setup
@@ -112,10 +120,13 @@ directories:
 directories:
   "/Users/username/OneDrive/Documents":
     ignore_extensions: []  # Process all document types
+    max_filesize: 15  # Business documents can be larger
   "/Users/username/OneDrive/Shared":
     ignore_extensions: [".xlsx", ".pptx"]  # Skip large presentation files
+    max_filesize: 8  # Shared files medium size
   "/Users/username/Downloads":
     ignore_extensions: [".html", ".htm", ".rtf"]  # Skip temporary web downloads
+    max_filesize: 3  # Keep downloads small
 ```
 
 #### Example 3: Selective Processing
@@ -123,15 +134,19 @@ directories:
 directories:
   "/Users/username/Important_Docs":
     ignore_extensions: []  # Process everything important
+    max_filesize: 50  # Large limit for important documents
   "/Users/username/Archive":
     ignore_extensions: [".docx", ".xlsx", ".pptx"]  # Only text and PDFs in archive
+    max_filesize: 25  # Medium limit for archived content
   "/Users/username/Temp":
     ignore_extensions: [".pdf", ".docx", ".xlsx", ".pptx"]  # Only plain text in temp
+    max_filesize: 1  # Very small limit for temporary files
 ```
 
 The key benefits of per-directory configuration:
 - **Reduce noise**: Skip irrelevant file types in specific directories
 - **Improve performance**: Don't process large files where they're not needed
+- **Control file sizes**: Set different size limits based on directory purpose
 - **Better organization**: Tailor processing to the content type of each directory
 - **Fine-grained control**: Different rules for different use cases
 

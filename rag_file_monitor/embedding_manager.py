@@ -8,6 +8,7 @@ import fnmatch
 import threading
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
+from tqdm import tqdm
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -102,6 +103,20 @@ class EmbeddingManager:
             batch_size = self.config.get("memory", {}).get("hash_loading_batch_size", 1000)  # Use config value with default
             total_loaded = 0
 
+            # First, get total count for progress bar
+            try:
+                collection_info = self.client.get_collection(self.collection_name)
+                total_points = collection_info.points_count
+            except Exception:
+                total_points = None
+                
+            # Initialize progress bar
+            try:
+                pbar = tqdm(total=total_points, desc="Loading file hashes", unit="hashes") if total_points else None
+            except ImportError:
+                pbar = None
+                self.logger.info("tqdm not available, progress bar disabled")
+
             while True:
                 scroll_result = self.client.scroll(
                     collection_name=self.collection_name,
@@ -121,6 +136,10 @@ class EmbeddingManager:
                         self.file_hashes[point.payload["file_path"]] = point.payload["file_hash"]
 
                 total_loaded += len(points)
+                
+                # Update progress bar
+                if pbar:
+                    pbar.update(len(points))
 
                 # Break if no more results
                 if next_offset is None:
@@ -128,9 +147,14 @@ class EmbeddingManager:
 
                 offset = next_offset
 
-                # Optional: Yield control to prevent blocking
+                # Optional: Yield control to prevent blocking and log progress without tqdm
                 if total_loaded % 5000 == 0:
-                    self.logger.info(f"Loaded {total_loaded} file hashes so far...")
+                    if not pbar:  # Only log if no progress bar
+                        self.logger.info(f"Loaded {total_loaded} file hashes so far...")
+                        
+            # Close progress bar
+            if pbar:
+                pbar.close()
 
             self.logger.info(f"Loaded {len(self.file_hashes)} unique file hashes from {total_loaded} points")
 

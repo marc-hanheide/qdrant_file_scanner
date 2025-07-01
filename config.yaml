@@ -1,19 +1,20 @@
 directories:
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Microsoft Teams Chat Files":
+    max_filesize: 10
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Attachments":
-    ignore_extensions: []  # Use default file_extensions
+    max_filesize: 10  # Maximum file size in MB (0 = use global default)
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails":
     ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations in emails
+    max_filesize: 2  # Smaller limit for emails
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Reviews":
-    ignore_extensions: []  # Use default file_extensions
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/letters":
-    ignore_extensions: [".html", ".htm"]  # Skip HTML files in letters
   "/Users/mhanheide/Library/CloudStorage/OneDrive-SharedLibraries-UniversityofLincoln/UoL Academic Board - General/2024-25":
     ignore_extensions: []  # Use default file_extensions
+    max_filesize: 15  # Larger limit for official documents
   "/Users/mhanheide/Downloads":
-    ignore_extensions: [".pptx", ".htm", ".rtf"]  # Skip web downloads and RTF in Downloads
+    max_filesize: 50  # larger limit for local files
   "/Users/mhanheide/Desktop":
-    ignore_extensions: []  # Use default file_extensions
-  
+    max_filesize: 50  # larger limit for local files
   # Add more directories as needed with their specific configurations
 
 # File extensions to process (global defaults)
