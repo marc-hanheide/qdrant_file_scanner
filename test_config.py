@@ -47,6 +47,8 @@ class MockFileMonitor:
         if isinstance(directories_config, dict):
             # Ensure all directories have default values
             for directory, config in directories_config.items():
+                if not config:
+                    config = directories_config[directory] = {}
                 if "max_filesize" not in config:
                     config["max_filesize"] = 0  # 0 means use global default
                 if "ignore_extensions" not in config:
