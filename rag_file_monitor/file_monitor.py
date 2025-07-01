@@ -246,33 +246,6 @@ class FileMonitor:
 
         self.logger = logging.getLogger(__name__)
 
-    def should_ignore_file(self, file_path: str) -> bool:
-        """Check if file should be ignored based on patterns and file size"""
-        path = Path(file_path)
-
-        # Check exclude patterns
-        exclude_patterns = self.config.get("processing", {}).get("exclude_patterns", [])
-        for pattern in exclude_patterns:
-            # Convert glob pattern to Path.match format
-            if "*" in pattern or "?" in pattern:
-                if path.match(pattern):
-                    return True
-            elif pattern in str(path):
-                return True
-
-        # Check file size (only for files that actually exist)
-        try:
-            if path.exists():
-                max_size_mb = self.config.get("processing", {}).get("max_file_size_mb", 5)
-                max_size_bytes = max_size_mb * 1024 * 1024
-                if path.stat().st_size > max_size_bytes:
-                    return True
-        except (OSError, FileNotFoundError):
-            # If we can't stat the file, don't ignore it based on size
-            pass
-
-        return False
-
     def is_supported_file_type(self, file_path: str, supported_extensions: Set[str]) -> bool:
         """Check if file type is supported based on given extensions"""
         path = Path(file_path)
