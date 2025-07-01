@@ -342,8 +342,16 @@ source .venv/bin/activate
 # Install development dependencies (if not already installed)
 pip install -r requirements-dev.txt
 
-# Run tests
+# Run tests (using the test runner - recommended)
+python tests/run_tests.py
+
+# Or run tests with pytest directly
 pytest
+
+# Run specific test types
+python tests/run_tests.py --type unit        # Unit tests only
+python tests/run_tests.py --type integration # Integration tests only
+python tests/run_tests.py --check-deps      # Check test dependencies
 
 # Format code
 black .
