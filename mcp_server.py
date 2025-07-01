@@ -166,11 +166,19 @@ def get_rag_config() -> str:
     ctx = mcp.get_context()
     config = ctx.request_context.lifespan_context["config"]
 
+    # Parse directories configuration to handle both formats
+    directories_config = config.get("directories", {})
+    if isinstance(directories_config, list):
+        # Legacy format - convert for display
+        directories_display = {directory: {"ignore_extensions": []} for directory in directories_config}
+    else:
+        directories_display = directories_config
+
     config_summary = {
         "qdrant": config.get("qdrant", {}),
         "mcp": __file__,
         "embedding": config.get("embedding", {}),
-        "directories": config.get("directories", []),
+        "directories": directories_display,
         "file_extensions": config.get("file_extensions", []),
     }
 

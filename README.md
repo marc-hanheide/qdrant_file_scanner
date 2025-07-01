@@ -51,14 +51,89 @@ pip install -e .
 ## Configuration
 
 1. Copy and edit the `config.yaml` file:
-   - Update `directories` to point to folders you want to monitor
-   - Adjust `file_extensions` for the file types you need
+   - Update `directories` to point to folders you want to monitor (see Directory Configuration below)
+   - Adjust `file_extensions` for the file types you need (global defaults)
    - Modify Qdrant settings if your server runs on different host/port
    - Set `delete_embeddings_on_file_deletion` to control deletion behavior:
      - `true`: Delete embeddings when files are deleted (traditional behavior)
      - `false`: Keep embeddings but mark as deleted (allows restoration)
 
 2. Make sure your Qdrant server is running at `http://localhost:6633`
+
+### Directory Configuration
+
+The tool supports two configuration formats for directories:
+
+#### New Format (Recommended): Per-Directory Settings
+```yaml
+directories:
+  "/path/to/documents":
+    ignore_extensions: []  # Use all global file_extensions
+  "/path/to/emails":
+    ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations
+  "/path/to/downloads":
+    ignore_extensions: [".html", ".htm", ".rtf"]  # Skip web files and RTF
+```
+
+Each directory can specify:
+- `ignore_extensions`: Array of file extensions to skip for this directory
+- Extensions are applied on top of the global `file_extensions` list
+- Empty array means all global extensions will be processed
+
+#### Legacy Format (Still Supported)
+```yaml
+directories:
+  - "/path/to/documents"
+  - "/path/to/emails"
+  - "/path/to/downloads"
+```
+
+This format will process all global `file_extensions` in all directories.
+
+### Configuration Examples
+
+Here are some practical examples of how to configure directories with per-directory settings:
+
+#### Example 1: Academic/Research Setup
+```yaml
+directories:
+  "/Users/username/Documents/Papers":
+    ignore_extensions: []  # Process all file types
+  "/Users/username/Documents/Email_Attachments":
+    ignore_extensions: [".html", ".htm"]  # Skip HTML emails
+  "/Users/username/Downloads":
+    ignore_extensions: [".html", ".htm", ".rtf", ".xlsx"]  # Skip web files and spreadsheets
+  "/Users/username/Desktop":
+    ignore_extensions: [".pptx", ".xlsx"]  # Skip presentations and spreadsheets on desktop
+```
+
+#### Example 2: Business Setup
+```yaml
+directories:
+  "/Users/username/OneDrive/Documents":
+    ignore_extensions: []  # Process all document types
+  "/Users/username/OneDrive/Shared":
+    ignore_extensions: [".xlsx", ".pptx"]  # Skip large presentation files
+  "/Users/username/Downloads":
+    ignore_extensions: [".html", ".htm", ".rtf"]  # Skip temporary web downloads
+```
+
+#### Example 3: Selective Processing
+```yaml
+directories:
+  "/Users/username/Important_Docs":
+    ignore_extensions: []  # Process everything important
+  "/Users/username/Archive":
+    ignore_extensions: [".docx", ".xlsx", ".pptx"]  # Only text and PDFs in archive
+  "/Users/username/Temp":
+    ignore_extensions: [".pdf", ".docx", ".xlsx", ".pptx"]  # Only plain text in temp
+```
+
+The key benefits of per-directory configuration:
+- **Reduce noise**: Skip irrelevant file types in specific directories
+- **Improve performance**: Don't process large files where they're not needed
+- **Better organization**: Tailor processing to the content type of each directory
+- **Fine-grained control**: Different rules for different use cases
 
 ## Usage
 

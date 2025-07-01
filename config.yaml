@@ -1,15 +1,23 @@
 directories:
-  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Attachments"
-  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails"
-  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Reviews"
-  - "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/letters"
-  - "/Users/mhanheide/Library/CloudStorage/OneDrive-SharedLibraries-UniversityofLincoln/UoL Academic Board - General/2024-25"
-  - "/Users/mhanheide/Downloads"
-  - "/Users/mhanheide/Desktop"
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Attachments":
+    ignore_extensions: []  # Use default file_extensions
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails":
+    ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations in emails
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Reviews":
+    ignore_extensions: []  # Use default file_extensions
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/letters":
+    ignore_extensions: [".html", ".htm"]  # Skip HTML files in letters
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-SharedLibraries-UniversityofLincoln/UoL Academic Board - General/2024-25":
+    ignore_extensions: []  # Use default file_extensions
+  "/Users/mhanheide/Downloads":
+    ignore_extensions: [".pptx", ".htm", ".rtf"]  # Skip web downloads and RTF in Downloads
+  "/Users/mhanheide/Desktop":
+    ignore_extensions: []  # Use default file_extensions
   
-  # Add more directories as needed
+  # Add more directories as needed with their specific configurations
 
-# File extensions to process
+# File extensions to process (global defaults)
+# Each directory can override these with ignore_extensions
 file_extensions:
   - ".txt"
   - ".md"

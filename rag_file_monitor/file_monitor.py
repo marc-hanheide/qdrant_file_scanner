@@ -31,6 +31,8 @@ class FileMonitorHandler(FileSystemEventHandler):
         exclude_patterns: List[str],
         max_file_size: int,
         delete_embeddings_on_deletion: bool,
+        directory_path: str = None,
+        directory_config: Dict = None,
     ):
         self.embedding_manager = embedding_manager
         self.text_extractor = text_extractor
@@ -38,14 +40,34 @@ class FileMonitorHandler(FileSystemEventHandler):
         self.exclude_patterns = exclude_patterns
         self.max_file_size = max_file_size
         self.delete_embeddings_on_deletion = delete_embeddings_on_deletion
+        self.directory_path = directory_path
+        self.directory_config = directory_config or {}
         self.logger = logging.getLogger(__name__)
+
+    def get_effective_extensions_for_file(self, file_path: str) -> Set[str]:
+        """Get effective file extensions for a file, considering directory-specific ignore rules"""
+        if not self.directory_config or not self.directory_path:
+            return self.file_extensions
+        
+        # Check if this file is in the configured directory
+        if not file_path.startswith(self.directory_path):
+            return self.file_extensions
+        
+        # Get ignore extensions for this directory
+        ignore_extensions = set(self.directory_config.get('ignore_extensions', []))
+        
+        # Return global extensions minus ignored ones
+        return self.file_extensions - ignore_extensions
 
     def should_process_file(self, file_path: str) -> bool:
         """Check if file should be processed"""
         path = Path(file_path)
 
+        # Get effective extensions for this file
+        effective_extensions = self.get_effective_extensions_for_file(file_path)
+        
         # Check extension
-        if path.suffix.lower() not in self.file_extensions:
+        if path.suffix.lower() not in effective_extensions:
             return False
 
         # Check exclude patterns
@@ -170,27 +192,41 @@ class FileMonitor:
         """Scan existing files in monitored directories"""
         self.logger.info("Scanning existing files...")
 
-        file_extensions = set(self.config["file_extensions"])
+        # Get base configuration
+        global_file_extensions = set(self.config["file_extensions"])
         exclude_patterns = self.config["processing"]["exclude_patterns"]
         max_file_size = self.config["processing"]["max_file_size_mb"] * 1024 * 1024
         delete_embeddings_on_deletion = self.config["processing"]["delete_embeddings_on_file_deletion"]
 
-        handler = FileMonitorHandler(
-            self.embedding_manager,
-            self.text_extractor,
-            file_extensions,
-            exclude_patterns,
-            max_file_size,
-            delete_embeddings_on_deletion,
-        )
+        # Get directories configuration
+        directories_config = self.get_directories_config()
 
         total_files = 0
-        for directory in self.config["directories"]:
+        for directory, directory_config in directories_config.items():
             if not os.path.exists(directory):
                 self.logger.warning(f"Directory does not exist: {directory}")
                 continue
 
             self.logger.info(f"Scanning directory: {directory}")
+            
+            # Get effective extensions for this directory
+            effective_extensions = self.get_effective_extensions_for_directory(directory, directory_config)
+            
+            if not effective_extensions:
+                self.logger.info(f"No file extensions to process in directory: {directory}")
+                continue
+
+            # Create handler for this directory
+            handler = FileMonitorHandler(
+                self.embedding_manager,
+                self.text_extractor,
+                effective_extensions,
+                exclude_patterns,
+                max_file_size,
+                delete_embeddings_on_deletion,
+                directory,
+                directory_config,
+            )
 
             # First pass: count total files to process for progress bar
             files_to_process = []
@@ -225,30 +261,44 @@ class FileMonitor:
         """Start monitoring directories for changes"""
         self.logger.info("Starting file monitoring...")
 
-        file_extensions = set(self.config["file_extensions"])
+        # Get base configuration
+        global_file_extensions = set(self.config["file_extensions"])
         exclude_patterns = self.config["processing"]["exclude_patterns"]
         max_file_size = self.config["processing"]["max_file_size_mb"] * 1024 * 1024
         delete_embeddings_on_deletion = self.config["processing"]["delete_embeddings_on_file_deletion"]
 
-        event_handler = FileMonitorHandler(
-            self.embedding_manager,
-            self.text_extractor,
-            file_extensions,
-            exclude_patterns,
-            max_file_size,
-            delete_embeddings_on_deletion,
-        )
+        # Get directories configuration
+        directories_config = self.get_directories_config()
 
-        for directory in self.config["directories"]:
+        for directory, directory_config in directories_config.items():
             if not os.path.exists(directory):
                 self.logger.warning(f"Directory does not exist: {directory}")
                 continue
+
+            # Get effective extensions for this directory
+            effective_extensions = self.get_effective_extensions_for_directory(directory, directory_config)
+            
+            if not effective_extensions:
+                self.logger.info(f"No file extensions to process in directory: {directory}")
+                continue
+
+            # Create handler for this directory
+            event_handler = FileMonitorHandler(
+                self.embedding_manager,
+                self.text_extractor,
+                effective_extensions,
+                exclude_patterns,
+                max_file_size,
+                delete_embeddings_on_deletion,
+                directory,
+                directory_config,
+            )
 
             observer = Observer()
             observer.schedule(event_handler, directory, recursive=True)
             observer.start()
             self.observers.append(observer)
-            self.logger.info(f"Monitoring directory: {directory}")
+            self.logger.info(f"Monitoring directory: {directory} (extensions: {sorted(effective_extensions)})")
 
         if not self.observers:
             self.logger.error("No valid directories to monitor")
@@ -271,6 +321,33 @@ class FileMonitor:
             for observer in self.observers:
                 observer.stop()
                 observer.join()
+
+    def get_directories_config(self) -> Dict[str, Dict]:
+        """Parse directories configuration to handle both old and new formats"""
+        directories_config = self.config.get("directories", {})
+        
+        # Handle legacy format (list of directories)
+        if isinstance(directories_config, list):
+            self.logger.warning("Using legacy directory configuration format. Consider upgrading to the new per-directory format.")
+            # Convert to new format with empty configurations
+            return {directory: {"ignore_extensions": []} for directory in directories_config}
+        
+        # Handle new format (dictionary with per-directory settings)
+        if isinstance(directories_config, dict):
+            return directories_config
+        
+        self.logger.error("Invalid directories configuration format")
+        return {}
+
+    def get_effective_extensions_for_directory(self, directory: str, directory_config: Dict) -> Set[str]:
+        """Get effective file extensions for a directory"""
+        global_extensions = set(self.config.get("file_extensions", []))
+        ignore_extensions = set(directory_config.get("ignore_extensions", []))
+        
+        effective_extensions = global_extensions - ignore_extensions
+        self.logger.debug(f"Directory {directory}: global={global_extensions}, ignore={ignore_extensions}, effective={effective_extensions}")
+        
+        return effective_extensions
 
 
 @click.command()
