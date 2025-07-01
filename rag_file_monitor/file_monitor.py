@@ -11,7 +11,7 @@ import hashlib
 import yaml
 import click
 from pathlib import Path
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Union
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -107,6 +107,36 @@ class FileMonitorHandler(FileSystemEventHandler):
         self.logger.debug(f"File {file_path} passed all checks, will be processed")
         return True
 
+    def should_ignore_file(self, file_path: str) -> bool:
+        """Check if file should be ignored based on patterns and file size"""
+        path = Path(file_path)
+        
+        # Check exclude patterns
+        exclude_patterns = self.config.get("processing", {}).get("exclude_patterns", [])
+        for pattern in exclude_patterns:
+            # Convert glob pattern to Path.match format
+            if '*' in pattern or '?' in pattern:
+                if path.match(pattern):
+                    return True
+            elif pattern in str(path):
+                return True
+        
+        # Check file size
+        try:
+            max_size_mb = self.config.get("processing", {}).get("max_file_size_mb", 5)
+            max_size_bytes = max_size_mb * 1024 * 1024
+            if path.stat().st_size > max_size_bytes:
+                return True
+        except (OSError, FileNotFoundError):
+            return True
+            
+        return False
+    
+    def is_supported_file_type(self, file_path: str, supported_extensions: Set[str]) -> bool:
+        """Check if file type is supported based on given extensions"""
+        path = Path(file_path)
+        return path.suffix.lower() in supported_extensions
+
     def get_file_hash(self, file_path: str) -> str:
         """Get MD5 hash of file for change detection using streaming"""
         try:
@@ -180,8 +210,11 @@ class FileMonitorHandler(FileSystemEventHandler):
 class FileMonitor:
     """Main file monitoring class"""
 
-    def __init__(self, config_path: str = "config.yaml"):
-        self.config = self.load_config(config_path)
+    def __init__(self, config_or_path: Union[str, Dict] = "config.yaml"):
+        if isinstance(config_or_path, dict):
+            self.config = config_or_path
+        else:
+            self.config = self.load_config(config_or_path)
         self.setup_logging()
 
         self.embedding_manager = EmbeddingManager(self.config)
@@ -210,6 +243,38 @@ class FileMonitor:
         )
 
         self.logger = logging.getLogger(__name__)
+
+    def should_ignore_file(self, file_path: str) -> bool:
+        """Check if file should be ignored based on patterns and file size"""
+        path = Path(file_path)
+        
+        # Check exclude patterns
+        exclude_patterns = self.config.get("processing", {}).get("exclude_patterns", [])
+        for pattern in exclude_patterns:
+            # Convert glob pattern to Path.match format
+            if '*' in pattern or '?' in pattern:
+                if path.match(pattern):
+                    return True
+            elif pattern in str(path):
+                return True
+        
+        # Check file size (only for files that actually exist)
+        try:
+            if path.exists():
+                max_size_mb = self.config.get("processing", {}).get("max_file_size_mb", 5)
+                max_size_bytes = max_size_mb * 1024 * 1024
+                if path.stat().st_size > max_size_bytes:
+                    return True
+        except (OSError, FileNotFoundError):
+            # If we can't stat the file, don't ignore it based on size
+            pass
+            
+        return False
+    
+    def is_supported_file_type(self, file_path: str, supported_extensions: Set[str]) -> bool:
+        """Check if file type is supported based on given extensions"""
+        path = Path(file_path)
+        return path.suffix.lower() in supported_extensions
 
     def scan_existing_files(self):
         """Scan existing files in monitored directories"""
@@ -390,6 +455,16 @@ class FileMonitor:
         self.logger.debug(f"Directory {directory}: global={global_extensions}, ignore={ignore_extensions}, effective={effective_extensions}")
         
         return effective_extensions
+
+    def get_effective_max_filesize_for_directory(self, directory: str, directory_config: Dict) -> int:
+        """Get effective max file size for a directory (in MB)"""
+        global_max_mb = self.config.get("processing", {}).get("max_file_size_mb", 5)
+        directory_max_mb = directory_config.get("max_filesize", 0)
+        
+        if directory_max_mb <= 0:
+            return global_max_mb
+        else:
+            return directory_max_mb
 
 
 @click.command()

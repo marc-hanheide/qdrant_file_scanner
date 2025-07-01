@@ -10,9 +10,10 @@ import asyncio
 import sys
 import logging
 from pathlib import Path
+import pytest
 
 # Add the project root to sys.path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
@@ -24,11 +25,12 @@ except ImportError as e:
     sys.exit(1)
 
 
+@pytest.mark.asyncio
 async def test_rag_search():
     """Test the RAG search functionality"""
 
     # Load configuration
-    config_path = Path(__file__).parent / "config.yaml"
+    config_path = Path(__file__).parent.parent / "config.yaml"
     if not config_path.exists():
         print(f"Configuration file not found: {config_path}")
         return False
@@ -70,6 +72,7 @@ async def test_rag_search():
         return False
 
 
+@pytest.mark.asyncio
 async def test_mcp_server_import():
     """Test if MCP server can be imported"""
     print("\nTesting MCP server import...")

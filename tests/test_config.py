@@ -113,7 +113,7 @@ def test_new_format():
 
 def test_config_yaml():
     print("=== Testing Actual config.yaml ===")
-    config_path = Path(__file__).parent / "config.yaml"
+    config_path = Path(__file__).parent.parent / "config.yaml"
     
     if config_path.exists():
         try:
