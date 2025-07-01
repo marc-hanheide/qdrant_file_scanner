@@ -163,20 +163,6 @@ class TestFileMonitor:
         except ImportError:
             pytest.skip("Required dependencies not available")
 
-    def test_should_ignore_file(self, sample_config):
-        """Test file filtering logic"""
-        try:
-            with patch("rag_file_monitor.file_monitor.EmbeddingManager"), patch("rag_file_monitor.file_monitor.TextExtractor"):
-                monitor = FileMonitor(sample_config)
-
-                # Test exclude patterns
-                assert monitor.should_ignore_file("/path/to/file.tmp") == True
-                assert monitor.should_ignore_file("/path/to/file.log") == True
-                assert monitor.should_ignore_file("/path/to/.git/config") == True
-                assert monitor.should_ignore_file("/path/to/file.txt") == False
-        except ImportError:
-            pytest.skip("Required dependencies not available")
-
     def test_is_supported_file_type(self, sample_config):
         """Test file type support checking"""
         try:

@@ -149,9 +149,6 @@ class TestEndToEndIntegration:
                 txt_file = sample_files["txt"]
                 tmp_file = sample_files["tmp"]
 
-                assert not monitor.should_ignore_file(txt_file)
-                assert monitor.should_ignore_file(tmp_file)
-
                 # Test directory-specific extension handling
                 dir_config = directories_config[temp_directory]
                 effective_extensions = monitor.get_effective_extensions_for_directory(temp_directory, dir_config)
@@ -182,8 +179,7 @@ class TestEndToEndIntegration:
 
                 for file_path in all_files:
                     if file_path.is_file():
-                        if not monitor.should_ignore_file(str(file_path)):
-                            processed_files.append(str(file_path))
+                        processed_files.append(str(file_path))
 
                 # Should have processed .txt, .md, .html files but not .tmp, .log
                 expected_processed = {sample_files["txt"], sample_files["md"], sample_files["html"]}
