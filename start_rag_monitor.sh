@@ -4,7 +4,7 @@
 # This script waits for Qdrant to be available before starting the RAG monitor
 
 # Configuration - MODIFY THESE PATHS FOR YOUR SETUP
-RAG_MONITOR_DIR="/Users/mhanheide/workspace/qdrant_file_scanner"
+RAG_MONITOR_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_PATH="$RAG_MONITOR_DIR/.venv"
 CONFIG_FILE="$RAG_MONITOR_DIR/config.yaml"
 LOG_FILE="$HOME/Library/Logs/rag-monitor-startup.log"

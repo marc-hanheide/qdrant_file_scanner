@@ -93,6 +93,82 @@ rag-monitor --monitor-only
 rag-monitor --config my_config.yaml
 ```
 
+### Scheduled Scanning with Cron
+
+For periodic scanning without continuous monitoring, you can set up a cron job to run `rag-monitor --scan-only` at regular intervals. This is useful for systems where you want to index files periodically rather than monitoring in real-time.
+
+#### Setting up a Cron Job
+
+1. **Create a wrapper script** (recommended approach for complex paths):
+
+Create a file called `rag-scan.sh` in your project directory:
+
+```bash
+#!/bin/bash
+# RAG Monitor Scan Script
+# This script ensures proper environment setup for cron execution
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Activate virtual environment and run scan
+source .venv/bin/activate
+rag-monitor -c ./config.yaml --scan-only
+```
+
+Make it executable:
+```bash
+chmod +x rag-scan.sh
+```
+
+2. **Edit your crontab**:
+```bash
+crontab -e
+```
+
+3. **Add the cron job** (example runs every 4 hours):
+```bash
+# RAG Monitor periodic scan - runs every 4 hours
+0 */4 * * * /path/to/your/rag-file-monitor/rag-scan.sh > ~/Library/Logs/rag-monitor-last-scan.log 2>&1
+```
+
+#### Alternative: Direct crontab entry
+
+If you prefer a single-line crontab entry without a wrapper script:
+
+```bash
+# RAG Monitor scan-only job - runs every 4 hours
+0 */4 * * * cd /path/to/your/rag-file-monitor && .venv/bin/rag-monitor -c ./config.yaml --scan-only > ~/Library/Logs/rag-monitor-last-scan.log 2>&1
+```
+
+#### Cron Schedule Examples
+
+```bash
+# Every 4 hours
+0 */4 * * *
+
+# Every 6 hours at the top of the hour
+0 */6 * * *
+
+# Daily at 2 AM
+0 2 * * *
+
+# Every weekday at 9 AM
+0 9 * * 1-5
+
+# Every Sunday at midnight
+0 0 * * 0
+```
+
+#### Important Notes
+
+- Replace `/path/to/your/rag-file-monitor` with your actual installation path
+- The log file `~/Library/Logs/rag-monitor-last-scan.log` will be overwritten each time (only keeps the last run)
+- Make sure your Qdrant server is running when the cron job executes
+- Consider using absolute paths in cron jobs to avoid PATH issues
+- The wrapper script approach is more robust as it handles environment activation automatically
+
 ### Managing Deleted Documents
 
 When `delete_embeddings_on_file_deletion` is set to `false`, you can manage deleted documents:
