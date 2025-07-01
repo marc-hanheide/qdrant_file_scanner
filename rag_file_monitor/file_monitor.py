@@ -48,14 +48,14 @@ class FileMonitorHandler(FileSystemEventHandler):
         """Get effective file extensions for a file, considering directory-specific ignore rules"""
         if not self.directory_config or not self.directory_path:
             return self.file_extensions
-        
+
         # Check if this file is in the configured directory
         if not file_path.startswith(self.directory_path):
             return self.file_extensions
-        
+
         # Get ignore extensions for this directory
-        ignore_extensions = set(self.directory_config.get('ignore_extensions', []))
-        
+        ignore_extensions = set(self.directory_config.get("ignore_extensions", []))
+
         # Return global extensions minus ignored ones
         return self.file_extensions - ignore_extensions
 
@@ -63,14 +63,14 @@ class FileMonitorHandler(FileSystemEventHandler):
         """Get effective max file size for a file, considering directory-specific settings"""
         if not self.directory_config or not self.directory_path:
             return self.max_file_size
-        
+
         # Check if this file is in the configured directory
         if not file_path.startswith(self.directory_path):
             return self.max_file_size
-        
+
         # Get max filesize for this directory (in MB, 0 means use global default)
-        directory_max_mb = self.directory_config.get('max_filesize', 0)
-        
+        directory_max_mb = self.directory_config.get("max_filesize", 0)
+
         if directory_max_mb <= 0:
             return self.max_file_size
         else:
@@ -83,7 +83,7 @@ class FileMonitorHandler(FileSystemEventHandler):
         # Get effective extensions for this file
         effective_extensions = self.get_effective_extensions_for_file(file_path)
         self.logger.debug(f"Effective extensions for {file_path}: {effective_extensions}")
-        
+
         # Check extension
         if path.suffix.lower() not in effective_extensions:
             self.logger.debug(f"File {file_path} has unsupported extension: {path.suffix.lower()}, skipping")
@@ -100,7 +100,9 @@ class FileMonitorHandler(FileSystemEventHandler):
             file_size = path.stat().st_size
             effective_max_size = self.get_effective_max_filesize_for_file(file_path)
             if file_size > effective_max_size:
-                self.logger.info(f"File {file_path} exceeds max size limit ({file_size} > {effective_max_size} bytes) and is skipped")
+                self.logger.info(
+                    f"File {file_path} exceeds max size limit ({file_size} > {effective_max_size} bytes) and is skipped"
+                )
                 return False
         except OSError:
             return False
@@ -110,17 +112,17 @@ class FileMonitorHandler(FileSystemEventHandler):
     def should_ignore_file(self, file_path: str) -> bool:
         """Check if file should be ignored based on patterns and file size"""
         path = Path(file_path)
-        
+
         # Check exclude patterns
         exclude_patterns = self.config.get("processing", {}).get("exclude_patterns", [])
         for pattern in exclude_patterns:
             # Convert glob pattern to Path.match format
-            if '*' in pattern or '?' in pattern:
+            if "*" in pattern or "?" in pattern:
                 if path.match(pattern):
                     return True
             elif pattern in str(path):
                 return True
-        
+
         # Check file size
         try:
             max_size_mb = self.config.get("processing", {}).get("max_file_size_mb", 5)
@@ -129,9 +131,9 @@ class FileMonitorHandler(FileSystemEventHandler):
                 return True
         except (OSError, FileNotFoundError):
             return True
-            
+
         return False
-    
+
     def is_supported_file_type(self, file_path: str, supported_extensions: Set[str]) -> bool:
         """Check if file type is supported based on given extensions"""
         path = Path(file_path)
@@ -247,17 +249,17 @@ class FileMonitor:
     def should_ignore_file(self, file_path: str) -> bool:
         """Check if file should be ignored based on patterns and file size"""
         path = Path(file_path)
-        
+
         # Check exclude patterns
         exclude_patterns = self.config.get("processing", {}).get("exclude_patterns", [])
         for pattern in exclude_patterns:
             # Convert glob pattern to Path.match format
-            if '*' in pattern or '?' in pattern:
+            if "*" in pattern or "?" in pattern:
                 if path.match(pattern):
                     return True
             elif pattern in str(path):
                 return True
-        
+
         # Check file size (only for files that actually exist)
         try:
             if path.exists():
@@ -268,9 +270,9 @@ class FileMonitor:
         except (OSError, FileNotFoundError):
             # If we can't stat the file, don't ignore it based on size
             pass
-            
+
         return False
-    
+
     def is_supported_file_type(self, file_path: str, supported_extensions: Set[str]) -> bool:
         """Check if file type is supported based on given extensions"""
         path = Path(file_path)
@@ -296,10 +298,10 @@ class FileMonitor:
                 continue
 
             self.logger.info(f"Scanning directory: {directory}")
-            
+
             # Get effective extensions for this directory
             effective_extensions = self.get_effective_extensions_for_directory(directory, directory_config)
-            
+
             if not effective_extensions:
                 self.logger.info(f"No file extensions to process in directory: {directory}")
                 continue
@@ -365,7 +367,7 @@ class FileMonitor:
 
             # Get effective extensions for this directory
             effective_extensions = self.get_effective_extensions_for_directory(directory, directory_config)
-            
+
             if not effective_extensions:
                 self.logger.info(f"No file extensions to process in directory: {directory}")
                 continue
@@ -386,14 +388,14 @@ class FileMonitor:
             observer.schedule(event_handler, directory, recursive=True)
             observer.start()
             self.observers.append(observer)
-            
+
             # Log directory configuration
             max_filesize_mb = directory_config.get("max_filesize", 0)
             if max_filesize_mb > 0:
                 size_info = f"max_size={max_filesize_mb}MB"
             else:
                 size_info = f"max_size={self.config['processing']['max_file_size_mb']}MB(global)"
-            
+
             self.logger.info(f"Monitoring directory: {directory} (extensions: {sorted(effective_extensions)}, {size_info})")
 
         if not self.observers:
@@ -421,13 +423,15 @@ class FileMonitor:
     def get_directories_config(self) -> Dict[str, Dict]:
         """Parse directories configuration to handle both old and new formats"""
         directories_config = self.config.get("directories", {})
-        
+
         # Handle legacy format (list of directories)
         if isinstance(directories_config, list):
-            self.logger.warning("Using legacy directory configuration format. Consider upgrading to the new per-directory format.")
+            self.logger.warning(
+                "Using legacy directory configuration format. Consider upgrading to the new per-directory format."
+            )
             # Convert to new format with empty configurations
             return {directory: {"ignore_extensions": [], "max_filesize": 0} for directory in directories_config}
-        
+
         # Handle new format (dictionary with per-directory settings)
         if isinstance(directories_config, dict):
             # Ensure all directories have default values
@@ -439,7 +443,7 @@ class FileMonitor:
                 if "ignore_extensions" not in config:
                     config["ignore_extensions"] = []
             return directories_config
-        
+
         self.logger.error("Invalid directories configuration format")
         return {}
 
@@ -450,17 +454,19 @@ class FileMonitor:
             ignore_extensions = set(directory_config.get("ignore_extensions", []))
         else:
             ignore_extensions = set()
-        
+
         effective_extensions = global_extensions - ignore_extensions
-        self.logger.debug(f"Directory {directory}: global={global_extensions}, ignore={ignore_extensions}, effective={effective_extensions}")
-        
+        self.logger.debug(
+            f"Directory {directory}: global={global_extensions}, ignore={ignore_extensions}, effective={effective_extensions}"
+        )
+
         return effective_extensions
 
     def get_effective_max_filesize_for_directory(self, directory: str, directory_config: Dict) -> int:
         """Get effective max file size for a directory (in MB)"""
         global_max_mb = self.config.get("processing", {}).get("max_file_size_mb", 5)
         directory_max_mb = directory_config.get("max_filesize", 0)
-        
+
         if directory_max_mb <= 0:
             return global_max_mb
         else:

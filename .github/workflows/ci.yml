@@ -55,7 +55,22 @@ jobs:
 
     - name: Run tests
       run: |
-        python -m pytest test_*.py -v --tb=short --asyncio-mode=auto
+        python -m pytest -v --tb=short --asyncio-mode=auto --junitxml=pytest-results.xml --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: pytest-results-${{ matrix.os }}-py${{ matrix.python-version }}
+        path: pytest-results.xml
+        
+    - name: Publish test results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Test Results (${{ matrix.os }}, Python ${{ matrix.python-version }})
+        path: pytest-results.xml
+        reporter: java-junit
 
     - name: Test package build
       run: |

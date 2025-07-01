@@ -19,6 +19,7 @@ def _has_docx_support():
     """Check if python-docx is available"""
     try:
         import docx
+
         return True
     except ImportError:
         return False
@@ -28,6 +29,7 @@ def _has_pptx_support():
     """Check if python-pptx is available"""
     try:
         import pptx
+
         return True
     except ImportError:
         return False
@@ -37,6 +39,7 @@ def _has_xlsx_support():
     """Check if openpyxl is available"""
     try:
         import openpyxl
+
         return True
     except ImportError:
         return False
@@ -52,8 +55,8 @@ class TestTextExtractor:
     def test_extract_plain_text(self):
         """Test extraction of plain text files"""
         test_content = "This is a test text file.\nWith multiple lines.\nAnd some content."
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
             tmp.write(test_content)
             tmp_path = tmp.name
 
@@ -66,8 +69,8 @@ class TestTextExtractor:
     def test_extract_markdown(self):
         """Test extraction of markdown files"""
         test_content = "# Test Header\n\nThis is markdown content.\n\n- List item 1\n- List item 2"
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as tmp:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(test_content)
             tmp_path = tmp.name
 
@@ -90,10 +93,10 @@ class TestTextExtractor:
             </ul>
         </body>
         </html>"""
-        
+
         expected_text_parts = ["Test Page", "Test Header", "This is HTML content.", "List item 1", "List item 2"]
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as tmp:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as tmp:
             tmp.write(html_content)
             tmp_path = tmp.name
 
@@ -109,14 +112,14 @@ class TestTextExtractor:
         """Test extraction of DOCX files"""
         try:
             from docx import Document
-            
+
             # Create a temporary DOCX file
             doc = Document()
-            doc.add_heading('Test Document', 0)
-            doc.add_paragraph('This is a test paragraph.')
-            doc.add_paragraph('This is another paragraph.')
-            
-            with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
+            doc.add_heading("Test Document", 0)
+            doc.add_paragraph("This is a test paragraph.")
+            doc.add_paragraph("This is another paragraph.")
+
+            with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
                 doc.save(tmp.name)
                 tmp_path = tmp.name
 
@@ -135,14 +138,14 @@ class TestTextExtractor:
         """Test extraction of PPTX files"""
         try:
             from pptx import Presentation
-            
+
             # Create a temporary PPTX file
             prs = Presentation()
             slide = prs.slides.add_slide(prs.slide_layouts[1])
             slide.shapes.title.text = "Test Presentation"
             slide.shapes.placeholders[1].text = "This is test content."
-            
-            with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
+
+            with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
                 prs.save(tmp.name)
                 tmp_path = tmp.name
 
@@ -160,7 +163,7 @@ class TestTextExtractor:
         """Test extraction of XLSX files"""
         try:
             from openpyxl import Workbook
-            
+
             # Create a temporary XLSX file
             wb = Workbook()
             ws = wb.active
@@ -169,8 +172,8 @@ class TestTextExtractor:
             ws["B1"] = "Age"
             ws["A2"] = "John Doe"
             ws["B2"] = 30
-            
-            with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+
+            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
                 wb.save(tmp.name)
                 tmp_path = tmp.name
 
@@ -192,7 +195,7 @@ class TestTextExtractor:
 
     def test_extract_unsupported_format(self):
         """Test extraction of unsupported file format"""
-        with tempfile.NamedTemporaryFile(suffix='.unknown', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".unknown", delete=False) as tmp:
             tmp.write(b"Some binary content")
             tmp_path = tmp.name
 

@@ -51,3 +51,4 @@ logs/
 rag_monitor.log
 models/
 .mypy_cache
+pytest-results.xml

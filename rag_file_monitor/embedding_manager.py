@@ -109,7 +109,7 @@ class EmbeddingManager:
                 total_points = collection_info.points_count
             except Exception:
                 total_points = None
-                
+
             # Initialize progress bar
             try:
                 pbar = tqdm(total=total_points, desc="Loading file hashes", unit="hashes") if total_points else None
@@ -136,7 +136,7 @@ class EmbeddingManager:
                         self.file_hashes[point.payload["file_path"]] = point.payload["file_hash"]
 
                 total_loaded += len(points)
-                
+
                 # Update progress bar
                 if pbar:
                     pbar.update(len(points))
@@ -151,7 +151,7 @@ class EmbeddingManager:
                 if total_loaded % 5000 == 0:
                     if not pbar:  # Only log if no progress bar
                         self.logger.info(f"Loaded {total_loaded} file hashes so far...")
-                        
+
             # Close progress bar
             if pbar:
                 pbar.close()
