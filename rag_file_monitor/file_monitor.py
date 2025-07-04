@@ -445,15 +445,132 @@ class FileMonitor:
         else:
             return directory_max_mb
 
+    def scan_adhoc_items(self, files: tuple, directories: tuple, recursive: bool = True):
+        """Scan specific files and directories provided via command line"""
+        self.logger.info("Starting ad-hoc file/directory scanning...")
+
+        # Get base configuration
+        global_file_extensions = set(self.config["file_extensions"])
+        exclude_patterns = self.config["processing"]["exclude_patterns"]
+        max_file_size = self.config["processing"]["max_file_size_mb"] * 1024 * 1024
+        delete_embeddings_on_deletion = self.config["processing"]["delete_embeddings_on_file_deletion"]
+
+        # Use default configuration for ad-hoc scanning
+        default_config = {"ignore_extensions": [], "max_filesize": 0}
+
+        # Create a single handler for all ad-hoc items
+        handler = FileMonitorHandler(
+            self.embedding_manager,
+            self.text_extractor,
+            global_file_extensions,
+            exclude_patterns,
+            max_file_size,
+            delete_embeddings_on_deletion,
+            "ad-hoc",  # directory name for logging
+            default_config,
+        )
+
+        files_to_process = []
+
+        # Process individual files
+        for file_path in files:
+            file_path = os.path.abspath(file_path)
+            if not os.path.exists(file_path):
+                self.logger.warning(f"File does not exist: {file_path}")
+                continue
+
+            if not os.path.isfile(file_path):
+                self.logger.warning(f"Path is not a file: {file_path}")
+                continue
+
+            if handler.should_process_file(file_path):
+                files_to_process.append(file_path)
+                self.logger.info(f"Added file for processing: {file_path}")
+            else:
+                self.logger.info(f"Skipping file (doesn't meet criteria): {file_path}")
+
+        # Process directories
+        for directory in directories:
+            directory = os.path.abspath(directory)
+            if not os.path.exists(directory):
+                self.logger.warning(f"Directory does not exist: {directory}")
+                continue
+
+            if not os.path.isdir(directory):
+                self.logger.warning(f"Path is not a directory: {directory}")
+                continue
+
+            self.logger.info(f"Scanning directory: {directory} (recursive: {recursive})")
+
+            if recursive:
+                # Recursive scan
+                for root, dirs, files in os.walk(directory):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        if handler.should_process_file(file_path):
+                            files_to_process.append(file_path)
+            else:
+                # Non-recursive scan (only immediate files)
+                try:
+                    for item in os.listdir(directory):
+                        file_path = os.path.join(directory, item)
+                        if os.path.isfile(file_path) and handler.should_process_file(file_path):
+                            files_to_process.append(file_path)
+                except PermissionError:
+                    self.logger.warning(f"Permission denied accessing directory: {directory}")
+                    continue
+
+        # Process all collected files
+        if files_to_process:
+            self.logger.info(f"Processing {len(files_to_process)} files...")
+
+            with tqdm(
+                files_to_process,
+                desc="Processing ad-hoc files",
+                unit="files",
+                file=sys.stderr,
+                colour="blue",
+            ) as pbar:
+                processed_count = 0
+                error_count = 0
+
+                for file_path in pbar:
+                    # Update progress bar with current file (last 30 chars)
+                    current_file = file_path[-30:] if len(file_path) > 30 else file_path
+                    pbar.set_postfix_str(f'"...{current_file}"')
+
+                    try:
+                        self.logger.debug(f"Processing ad-hoc file: {file_path}")
+                        handler.process_file(file_path)
+                        processed_count += 1
+                    except Exception as e:
+                        error_count += 1
+                        self.logger.error(f"Failed to process {file_path}: {str(e)}")
+                        # Continue processing other files
+                        continue
+
+                self.logger.info(f"Ad-hoc scanning completed. Processed: {processed_count}, Errors: {error_count}")
+        else:
+            self.logger.info("No files found to process in specified files/directories")
+
 
 @click.command()
 @click.option("--config", "-c", default="config.yaml", help="Path to config file")
 @click.option("--scan-only", is_flag=True, help="Only scan existing files, don't monitor")
 @click.option("--monitor-only", is_flag=True, help="Only monitor for changes, skip initial scan")
-def main(config, scan_only, monitor_only):
+@click.option("--add-file", "-f", multiple=True, help="Add specific file(s) to scan (can be used multiple times)")
+@click.option("--add-directory", "-d", multiple=True, help="Add specific directory/directories to scan (can be used multiple times)")
+@click.option("--no-recursive", is_flag=True, help="Scan directories non-recursively (only immediate files)")
+def main(config, scan_only, monitor_only, add_file, add_directory, no_recursive):
     """RAG File Monitor - Index files for RAG system"""
 
     monitor = FileMonitor(config)
+
+    # Handle ad-hoc file/directory scanning
+    if add_file or add_directory:
+        recursive = not no_recursive  # Default is recursive unless --no-recursive is specified
+        monitor.scan_adhoc_items(add_file, add_directory, recursive)
+        return
 
     if scan_only:
         monitor.scan_existing_files()
