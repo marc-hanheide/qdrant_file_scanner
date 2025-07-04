@@ -181,7 +181,54 @@ rag-monitor --monitor-only
 
 # Use custom config file
 rag-monitor --config my_config.yaml
+
+# Scan specific files (one-time indexing)
+rag-monitor --add-file path/to/document.pdf
+rag-monitor --add-file file1.txt --add-file file2.docx
+
+# Scan specific directories (one-time indexing)
+rag-monitor --add-directory path/to/folder
+rag-monitor --add-directory folder1 --add-directory folder2
+
+# Combine files and directories
+rag-monitor --add-file important.pdf --add-directory temp_docs/
+
+# Non-recursive directory scanning
+rag-monitor --add-directory folder --no-recursive
 ```
+
+### Ad-hoc File and Directory Scanning
+
+The `--add-file` and `--add-directory` options allow you to index specific files or directories without adding them to your main configuration. This is useful for:
+
+- One-time indexing of important documents
+- Processing files from temporary locations
+- Adding documents from external sources
+- Batch processing of downloaded files
+
+**Examples:**
+```bash
+# Index a single PDF
+rag-monitor --add-file ~/Downloads/research_paper.pdf
+
+# Index multiple files
+rag-monitor -f file1.txt -f file2.docx -f file3.pdf
+
+# Index an entire directory recursively (default)
+rag-monitor --add-directory ~/Downloads/conference_papers/
+
+# Index directory non-recursively (only files in the top level)
+rag-monitor --add-directory ~/Documents/ --no-recursive
+
+# Mix files and directories
+rag-monitor -f important.pdf -d temp_folder/ -d ~/Downloads/
+```
+
+**Notes:**
+- Ad-hoc scanning uses global configuration settings (file extensions, size limits, etc.)
+- Files are processed immediately and then the program exits
+- This mode doesn't start file monitoring - it's scan-only
+- Directory scanning is recursive by default
 
 ### Scheduled Scanning with Cron
 
