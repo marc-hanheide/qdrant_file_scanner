@@ -6,7 +6,29 @@ Utility script to manage deleted documents in Qdrant
 import yaml
 import click
 import logging
+from pathlib import Path
 from .embedding_manager import EmbeddingManager
+
+
+def load_config(config_path: str) -> dict:
+    """Load configuration from YAML file with smart discovery"""
+    # If the provided path is just "config.yaml" (default), try smart discovery
+    if config_path == "config.yaml":
+        config_candidates = [Path.cwd() / "config.yaml", Path(__file__).parent.parent / "config.yaml"]
+        actual_config_path = None
+        for candidate in config_candidates:
+            if candidate.exists():
+                actual_config_path = candidate
+                break
+        
+        if actual_config_path is None:
+            raise FileNotFoundError(f"Configuration file not found. Tried: {config_candidates}")
+        
+        config_path = str(actual_config_path)
+    
+    # Load the configuration file
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
 
 
 @click.group()
@@ -20,8 +42,7 @@ def cli():
 def list_deleted(config):
     """List all documents marked as deleted"""
     # Load config
-    with open(config, "r") as f:
-        config_data = yaml.safe_load(f)
+    config_data = load_config(config)
 
     # Setup logging
     logging.basicConfig(level=logging.INFO)
@@ -61,8 +82,7 @@ def restore_deleted(config, file_path):
         return
 
     # Load config
-    with open(config, "r") as f:
-        config_data = yaml.safe_load(f)
+    config_data = load_config(config)
 
     # Setup logging
     logging.basicConfig(level=logging.INFO)
@@ -94,8 +114,7 @@ def restore_deleted(config, file_path):
 def purge_deleted(config, file_path, force):
     """Permanently delete a document marked as deleted"""
     # Load config
-    with open(config, "r") as f:
-        config_data = yaml.safe_load(f)
+    config_data = load_config(config)
 
     # Setup logging
     logging.basicConfig(level=logging.INFO)
@@ -120,8 +139,7 @@ def cleanup_deleted(config, older_than_days, force):
     from datetime import datetime, timedelta
 
     # Load config
-    with open(config, "r") as f:
-        config_data = yaml.safe_load(f)
+    config_data = load_config(config)
 
     # Setup logging
     logging.basicConfig(level=logging.INFO)

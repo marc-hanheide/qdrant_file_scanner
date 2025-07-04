@@ -50,10 +50,16 @@ class RAGSearchResponse(BaseModel):
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     """Manage application lifecycle with RAG components"""
-    # Load configuration
-    config_path = Path(__file__).parent / "config.yaml"
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    # Load configuration with smart discovery
+    config_candidates = [Path.cwd() / "config.yaml", Path(__file__).parent / "config.yaml"]
+    config_path = None
+    for candidate in config_candidates:
+        if candidate.exists():
+            config_path = candidate
+            break
+    
+    if config_path is None:
+        raise FileNotFoundError(f"Configuration file not found. Tried: {config_candidates}")
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
