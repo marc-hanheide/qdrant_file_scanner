@@ -234,14 +234,14 @@ class FileMonitor:
                 if candidate.exists():
                     actual_config_path = candidate
                     break
-            
+
             if actual_config_path is None:
                 print(f"Configuration file not found. Tried: {config_candidates}")
                 print("Please ensure config.yaml exists in the current directory or specify the path with --config")
                 sys.exit(1)
-            
+
             config_path = str(actual_config_path)
-        
+
         # Load the configuration file
         try:
             with open(config_path, "r") as f:

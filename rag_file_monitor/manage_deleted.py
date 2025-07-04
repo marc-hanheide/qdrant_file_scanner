@@ -20,12 +20,12 @@ def load_config(config_path: str) -> dict:
             if candidate.exists():
                 actual_config_path = candidate
                 break
-        
+
         if actual_config_path is None:
             raise FileNotFoundError(f"Configuration file not found. Tried: {config_candidates}")
-        
+
         config_path = str(actual_config_path)
-    
+
     # Load the configuration file
     with open(config_path, "r") as f:
         return yaml.safe_load(f)

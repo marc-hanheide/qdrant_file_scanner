@@ -57,7 +57,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         if candidate.exists():
             config_path = candidate
             break
-    
+
     if config_path is None:
         raise FileNotFoundError(f"Configuration file not found. Tried: {config_candidates}")
 
