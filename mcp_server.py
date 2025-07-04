@@ -386,10 +386,10 @@ def scan_file(file_path: str) -> Dict[str, Any]:
         # Process the file - let embedding_manager handle hashing internally
         file_path_str = str(file_path)
         text_extractor = TextExtractor()
-        
+
         # Extract text from file
         extracted_text = text_extractor.extract_text(file_path_str)
-        
+
         if not extracted_text or not extracted_text.strip():
             return {
                 "success": False,
@@ -423,7 +423,9 @@ def scan_file(file_path: str) -> Dict[str, Any]:
         return {
             "success": False,
             "error": f"Error scanning file: {str(e)}",
-            "file_path": file_path_str if "file_path_str" in locals() else str(file_path) if "file_path" in locals() else "unknown",
+            "file_path": (
+                file_path_str if "file_path_str" in locals() else str(file_path) if "file_path" in locals() else "unknown"
+            ),
         }
 
 

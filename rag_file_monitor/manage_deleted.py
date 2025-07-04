@@ -43,12 +43,12 @@ def list_deleted(config):
     """List all documents marked as deleted, check if they actually exist, and restore/reindex if needed"""
     import os
     from .text_extractors import TextExtractor
-    
+
     # Load config
     config_data = load_config(config)
 
     # Setup logging
-    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    log_level = getattr(logging, config_data.get("logging", {}).get("level", "INFO").upper())
     logging.basicConfig(level=log_level)
 
     # Initialize components
@@ -70,24 +70,24 @@ def list_deleted(config):
     click.echo()
 
     for doc in deleted_docs:
-        file_path = doc['file_path']
-        
+        file_path = doc["file_path"]
+
         # Check if file actually exists
         if os.path.exists(file_path):
             click.echo(f"File exists: {file_path}")
-            
+
             try:
                 # Get current file hash
                 current_hash = embedding_manager.get_file_hash(file_path)
-                
+
                 # Check if file has changed by comparing with stored hash
                 if not embedding_manager.is_file_unchanged(file_path, current_hash):
                     click.echo(f"  File has changed - reindexing...")
-                    
+
                     # Extract text and reindex
                     text_content = text_extractor.extract_text(file_path)
                     embedding_manager.index_document(file_path, text_content, current_hash)
-                    
+
                     click.echo(f"  Successfully reindexed: {file_path}")
                     reindexed_count += 1
                 else:
@@ -95,10 +95,10 @@ def list_deleted(config):
                     click.echo(f"  File unchanged - restoring...")
                     text_content = text_extractor.extract_text(file_path)
                     embedding_manager.index_document(file_path, text_content, current_hash)
-                    
+
                     click.echo(f"  Successfully restored: {file_path}")
                     restored_count += 1
-                    
+
             except Exception as e:
                 click.echo(f"  Error processing file: {str(e)}")
                 actually_deleted.append(doc)
@@ -140,7 +140,7 @@ def restore_deleted(config, file_path):
     config_data = load_config(config)
 
     # Setup logging
-    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    log_level = getattr(logging, config_data.get("logging", {}).get("level", "INFO").upper())
     logging.basicConfig(level=log_level)
 
     # Initialize components
@@ -171,7 +171,7 @@ def purge_deleted(config, file_path, force):
     """Permanently delete a document marked as deleted (or restore/reindex if file still exists)"""
     import os
     from .text_extractors import TextExtractor
-    
+
     # Check if file exists
     if os.path.exists(file_path):
         # File exists - check if it needs to be restored/reindexed instead
@@ -179,18 +179,18 @@ def purge_deleted(config, file_path, force):
         config_data = load_config(config)
 
         # Setup logging
-        log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+        log_level = getattr(logging, config_data.get("logging", {}).get("level", "INFO").upper())
         logging.basicConfig(level=log_level)
 
         # Initialize components
         embedding_manager = EmbeddingManager(config_data)
         text_extractor = TextExtractor()
-        
+
         click.echo(f"File {file_path} exists. Checking if it needs restoration instead of deletion...")
-        
+
         try:
             current_hash = embedding_manager.get_file_hash(file_path)
-            
+
             if not embedding_manager.is_file_unchanged(file_path, current_hash):
                 click.echo(f"File has changed - reindexing instead of deleting...")
                 text_content = text_extractor.extract_text(file_path)
@@ -203,7 +203,7 @@ def purge_deleted(config, file_path, force):
                 embedding_manager.index_document(file_path, text_content, current_hash)
                 click.echo("File successfully restored!")
                 return
-                
+
         except Exception as e:
             click.echo(f"Error processing file: {str(e)}")
             if not force:
@@ -213,7 +213,7 @@ def purge_deleted(config, file_path, force):
     config_data = load_config(config)
 
     # Setup logging
-    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    log_level = getattr(logging, config_data.get("logging", {}).get("level", "INFO").upper())
     logging.basicConfig(level=log_level)
 
     # Initialize embedding manager
@@ -241,7 +241,7 @@ def cleanup_deleted(config, older_than_days, force):
     config_data = load_config(config)
 
     # Setup logging
-    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    log_level = getattr(logging, config_data.get("logging", {}).get("level", "INFO").upper())
     logging.basicConfig(level=log_level)
 
     # Initialize components
@@ -263,13 +263,13 @@ def cleanup_deleted(config, older_than_days, force):
     click.echo(f"Found {len(deleted_docs)} documents marked as deleted. Verifying actual file status...")
 
     for doc in deleted_docs:
-        file_path = doc['file_path']
-        
+        file_path = doc["file_path"]
+
         if os.path.exists(file_path):
             try:
                 # File exists - check if it has changed
                 current_hash = embedding_manager.get_file_hash(file_path)
-                
+
                 if not embedding_manager.is_file_unchanged(file_path, current_hash):
                     # File has changed - reindex it
                     text_content = text_extractor.extract_text(file_path)
@@ -282,7 +282,7 @@ def cleanup_deleted(config, older_than_days, force):
                     embedding_manager.index_document(file_path, text_content, current_hash)
                     restored_count += 1
                     click.echo(f"Restored unchanged file: {file_path}")
-                    
+
             except Exception as e:
                 click.echo(f"Error processing {file_path}: {str(e)}")
                 actually_deleted.append(doc)
@@ -334,12 +334,12 @@ def check_and_fix_deleted(config, dry_run):
     """Check all documents marked as deleted and restore/reindex those that still exist"""
     import os
     from .text_extractors import TextExtractor
-    
+
     # Load config
     config_data = load_config(config)
 
     # Setup logging
-    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    log_level = getattr(logging, config_data.get("logging", {}).get("level", "INFO").upper())
     logging.basicConfig(level=log_level)
 
     # Initialize components
@@ -360,17 +360,17 @@ def check_and_fix_deleted(config, dry_run):
     click.echo(f"Found {len(deleted_docs)} documents marked as deleted. Checking actual file status...")
 
     for doc in deleted_docs:
-        file_path = doc['file_path']
-        
+        file_path = doc["file_path"]
+
         if os.path.exists(file_path):
             try:
                 current_hash = embedding_manager.get_file_hash(file_path)
-                
+
                 if not embedding_manager.is_file_unchanged(file_path, current_hash):
                     to_reindex.append((file_path, current_hash))
                 else:
                     to_restore.append((file_path, current_hash))
-                    
+
             except Exception as e:
                 click.echo(f"Error processing {file_path}: {str(e)}")
                 actually_deleted.append(doc)
@@ -387,12 +387,12 @@ def check_and_fix_deleted(config, dry_run):
     if dry_run:
         click.echo()
         click.echo("DRY RUN - No changes will be made")
-        
+
         if to_restore:
             click.echo("Files that would be restored:")
             for file_path, _ in to_restore:
                 click.echo(f"  - {file_path}")
-                
+
         if to_reindex:
             click.echo("Files that would be reindexed:")
             for file_path, _ in to_reindex:
@@ -402,7 +402,7 @@ def check_and_fix_deleted(config, dry_run):
     # Perform the fixes
     restored_count = 0
     reindexed_count = 0
-    
+
     for file_path, current_hash in to_restore:
         try:
             text_content = text_extractor.extract_text(file_path)
