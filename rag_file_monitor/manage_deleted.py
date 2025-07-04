@@ -45,7 +45,8 @@ def list_deleted(config):
     config_data = load_config(config)
 
     # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    logging.basicConfig(level=log_level)
 
     # Initialize embedding manager
     embedding_manager = EmbeddingManager(config_data)
@@ -85,7 +86,8 @@ def restore_deleted(config, file_path):
     config_data = load_config(config)
 
     # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    logging.basicConfig(level=log_level)
 
     # Initialize components
     embedding_manager = EmbeddingManager(config_data)
@@ -117,7 +119,8 @@ def purge_deleted(config, file_path, force):
     config_data = load_config(config)
 
     # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    logging.basicConfig(level=log_level)
 
     # Initialize embedding manager
     embedding_manager = EmbeddingManager(config_data)
@@ -142,7 +145,8 @@ def cleanup_deleted(config, older_than_days, force):
     config_data = load_config(config)
 
     # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    log_level = getattr(logging, config_data.get('logging', {}).get('level', 'INFO').upper())
+    logging.basicConfig(level=log_level)
 
     # Initialize embedding manager
     embedding_manager = EmbeddingManager(config_data)
