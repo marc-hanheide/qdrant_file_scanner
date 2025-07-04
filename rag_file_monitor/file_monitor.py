@@ -559,7 +559,9 @@ class FileMonitor:
 @click.option("--scan-only", is_flag=True, help="Only scan existing files, don't monitor")
 @click.option("--monitor-only", is_flag=True, help="Only monitor for changes, skip initial scan")
 @click.option("--add-file", "-f", multiple=True, help="Add specific file(s) to scan (can be used multiple times)")
-@click.option("--add-directory", "-d", multiple=True, help="Add specific directory/directories to scan (can be used multiple times)")
+@click.option(
+    "--add-directory", "-d", multiple=True, help="Add specific directory/directories to scan (can be used multiple times)"
+)
 @click.option("--no-recursive", is_flag=True, help="Scan directories non-recursively (only immediate files)")
 def main(config, scan_only, monitor_only, add_file, add_directory, no_recursive):
     """RAG File Monitor - Index files for RAG system"""
