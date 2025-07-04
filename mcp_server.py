@@ -341,6 +341,82 @@ For specific file types, use appropriate glob patterns
 Search query: {query}"""
 
 
+@mcp.tool()
+def scan_file(file_path: str) -> Dict[str, Any]:
+    """
+    Scan and index a specific file into the RAG database.
+
+    This tool allows ad-hoc scanning of individual files without waiting for the file monitor.
+    The file will always be re-indexed when requested.
+
+    Args:
+        file_path: Absolute path to the file to scan and index
+
+    Returns:
+        Dict containing scan results and status information
+    """
+    # Get application context
+    ctx = mcp.get_context()
+    embedding_manager = ctx.request_context.lifespan_context["embedding_manager"]
+    logger = ctx.request_context.lifespan_context["logger"]
+
+    try:
+        from pathlib import Path
+
+        # Validate file path
+        file_path = Path(file_path).resolve()
+
+        if not file_path.exists():
+            return {
+                "success": False,
+                "error": f"File not found: {file_path}",
+                "file_path": str(file_path),
+            }
+
+        if not file_path.is_file():
+            return {
+                "success": False,
+                "error": f"Path is not a file: {file_path}",
+                "file_path": str(file_path),
+            }
+
+        logger.info(f"Ad-hoc file scan requested: {file_path}")
+
+        # Process the file (always re-index)
+        file_path_str = str(file_path)
+        result = embedding_manager.process_file(file_path_str)
+
+        if result:
+            chunks_added = result.get("chunks_added", 0)
+            message = f"File successfully scanned and indexed with {chunks_added} chunks"
+
+            logger.info(f"Ad-hoc file scan completed: {file_path} ({chunks_added} chunks)")
+
+            return {
+                "success": True,
+                "message": message,
+                "file_path": file_path_str,
+                "action": "indexed",
+                "chunks_added": chunks_added,
+                "file_size": file_path.stat().st_size,
+                "file_modified": file_path.stat().st_mtime,
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Failed to process file - may be unsupported file type or corrupted",
+                "file_path": file_path_str,
+            }
+
+    except Exception as e:
+        logger.error(f"Error during ad-hoc file scan: {e}")
+        return {
+            "success": False,
+            "error": f"Error scanning file: {str(e)}",
+            "file_path": file_path if "file_path" in locals() else "unknown",
+        }
+
+
 def main():
     """Main entry point for the MCP server"""
     # Run the FastMCP server
