@@ -62,7 +62,7 @@ processing:
 # Memory optimization settings
 memory:
   chunk_batch_size: 50  # Process document chunks in batches
-  hash_loading_batch_size: 5000  # Load file hashes in batches
+  hash_loading_batch_size: 20000  # Load file hashes in batches
   unload_model_after_idle_minutes: 30  # Unload embedding model after idle time
   force_gc_after_operations: 100  # Force garbage collection after N operations
 

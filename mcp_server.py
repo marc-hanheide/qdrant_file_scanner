@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import List, Dict, Optional, Any
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from pathlib import Path
+from rag_file_monitor.text_extractors import TextExtractor
 
 try:
     import yaml
@@ -361,7 +363,6 @@ def scan_file(file_path: str) -> Dict[str, Any]:
     logger = ctx.request_context.lifespan_context["logger"]
 
     try:
-        from pathlib import Path
 
         # Validate file path
         file_path = Path(file_path).resolve()
@@ -382,38 +383,47 @@ def scan_file(file_path: str) -> Dict[str, Any]:
 
         logger.info(f"Ad-hoc file scan requested: {file_path}")
 
-        # Process the file (always re-index)
+        # Process the file - let embedding_manager handle hashing internally
         file_path_str = str(file_path)
-        result = embedding_manager.process_file(file_path_str)
-
-        if result:
-            chunks_added = result.get("chunks_added", 0)
-            message = f"File successfully scanned and indexed with {chunks_added} chunks"
-
-            logger.info(f"Ad-hoc file scan completed: {file_path} ({chunks_added} chunks)")
-
-            return {
-                "success": True,
-                "message": message,
-                "file_path": file_path_str,
-                "action": "indexed",
-                "chunks_added": chunks_added,
-                "file_size": file_path.stat().st_size,
-                "file_modified": file_path.stat().st_mtime,
-            }
-        else:
+        text_extractor = TextExtractor()
+        
+        # Extract text from file
+        extracted_text = text_extractor.extract_text(file_path_str)
+        
+        if not extracted_text or not extracted_text.strip():
             return {
                 "success": False,
-                "error": "Failed to process file - may be unsupported file type or corrupted",
+                "error": "No text could be extracted from file - may be unsupported file type or empty",
                 "file_path": file_path_str,
             }
+
+        # Index the document - embedding_manager will handle hash calculation internally
+        # Pass empty string as hash since we want to force re-indexing
+        embedding_manager.index_document(file_path_str, extracted_text, "")
+
+        # Get chunk count by checking how many chunks would be generated
+        chunks = embedding_manager.chunk_text(extracted_text)
+        chunks_added = len(chunks) if chunks else 0
+
+        message = f"File successfully scanned and indexed with {chunks_added} chunks"
+        logger.info(f"Ad-hoc file scan completed: {file_path} ({chunks_added} chunks)")
+
+        return {
+            "success": True,
+            "message": message,
+            "file_path": file_path_str,
+            "action": "indexed",
+            "chunks_added": chunks_added,
+            "file_size": file_path.stat().st_size,
+            "file_modified": file_path.stat().st_mtime,
+        }
 
     except Exception as e:
         logger.error(f"Error during ad-hoc file scan: {e}")
         return {
             "success": False,
             "error": f"Error scanning file: {str(e)}",
-            "file_path": file_path if "file_path" in locals() else "unknown",
+            "file_path": file_path_str if "file_path_str" in locals() else str(file_path) if "file_path" in locals() else "unknown",
         }
 
 
