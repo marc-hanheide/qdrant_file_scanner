@@ -69,7 +69,7 @@ jobs:
         path: pytest-results.xml
         
     - name: Publish test results
-      uses: dorny/test-reporter@v1
+      uses: dorny/test-reporter@v2
       if: github.ref == 'refs/heads/main'
       with:
         name: Test Results (${{ matrix.os }}, Python ${{ matrix.python-version }})
