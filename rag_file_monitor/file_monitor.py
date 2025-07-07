@@ -190,9 +190,10 @@ class FileMonitorHandler(FileSystemEventHandler):
             # Check if file has changed
             current_hash = self.get_file_hash(file_path)
             if self.embedding_manager.is_file_unchanged(file_path, current_hash):
+                self.logger.info(f"File {file_path} has not changed, skipping indexing")
                 return
 
-            self.logger.debug(f"Document {file_path} needs indexing, extract text")
+            self.logger.info(f"Document {file_path} needs indexing, extract text")
             # Extract text
             text_content = self.text_extractor.extract_text(file_path)
             if not text_content.strip():
@@ -354,6 +355,8 @@ class FileMonitor:
             if not os.path.exists(directory):
                 self.logger.warning(f"Directory does not exist: {directory}")
                 continue
+            if directory_config is None:
+                directory_config = {}
 
             # Get effective extensions for this directory
             effective_extensions = self.get_effective_extensions_for_directory(directory, directory_config)
