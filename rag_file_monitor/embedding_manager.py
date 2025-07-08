@@ -747,35 +747,6 @@ class EmbeddingManager:
 
         return model_unloaded or reranker_unloaded
 
-    def get_memory_stats(self) -> Dict[str, Any]:
-        """Get memory usage statistics"""
-        hash_cache_stats = self.get_hash_cache_stats()
-        return {
-            "file_hashes_cache_entries": hash_cache_stats["total_entries"],
-            "file_hashes_valid_entries": hash_cache_stats["valid_entries"],
-            "file_hashes_expired_entries": hash_cache_stats["expired_entries"],
-            "embedding_model_loaded": self.embedding_model is not None,
-            "model_last_used": self.model_last_used.isoformat() if self.model_last_used else None,
-            "operation_counter": self.operation_counter,
-            "hash_cache_ttl_seconds": self.hash_cache_ttl,
-        }
-
-    def get_hash_cache_stats(self) -> Dict[str, Any]:
-        """Get statistics about the hash cache for monitoring"""
-        with self.hash_cache_lock:
-            total_entries = len(self.file_hashes)
-            current_time = time.time()
-            valid_entries = sum(1 for entry in self.file_hashes.values() if self._is_cache_entry_valid(entry))
-            expired_entries = total_entries - valid_entries
-
-            return {
-                "total_entries": total_entries,
-                "valid_entries": valid_entries,
-                "expired_entries": expired_entries,
-                "cache_ttl_seconds": self.hash_cache_ttl,
-                "hit_rate_info": "Hash cache provides on-demand querying with local caching",
-            }
-
     def _debug_text_content(self, text_content: str, file_path: str) -> Dict[str, Any]:
         """Debug helper to analyze text content that might cause embedding issues"""
         debug_info = {

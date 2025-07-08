@@ -72,8 +72,6 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     logging_config = config.get("logging", {})
     log_level = getattr(logging, logging_config.get("mcp_level", "INFO").upper())
 
-
-
     # Create stream handler
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(log_level)
@@ -94,10 +92,10 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
         # Pre-load models at startup for faster response times
         logger.info("Pre-loading models for fast MCP responses...")
-        
+
         # Pre-load embedding model
         embedding_manager.preload_model()
-            
+
         # Pre-load reranker model if enabled
         embedding_manager.reranker.preload_model()
 
@@ -116,7 +114,9 @@ mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
 
 
 @mcp.tool()
-def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = None, score_threshold: float = 0.0) -> RAGSearchResponse:
+def rag_search(
+    query: str, number_docs: int = 10, glob_pattern: Optional[str] = None, score_threshold: float = 0.0
+) -> RAGSearchResponse:
     """
     Search for relevant documents in the RAG database.
 
@@ -126,11 +126,11 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
 
     Args:
         query: The search string used to find relevant documents
-        number_docs: Number of documents to return (default: 10)
+        number_docs: The maximum number of documents to return (default: 10)
         glob_pattern: Optional glob pattern to filter results by file path (case insensitive)
-                     Examples: "*.pdf", "*/emails/*", "*report*"
+                      Examples: "*.pdf", "*/emails/*", "*report*"
         score_threshold: Minimum similarity score for results to be included (0.0-1.0, default: 0.0)
-                        Higher values return only more relevant results
+                         Higher values return only more relevant results, a value of 0.5 offers a good trade-off to start with
 
     Returns:
         RAGSearchResponse: Structured response containing unique matching document chunks
@@ -141,7 +141,9 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
     logger = ctx.request_context.lifespan_context["logger"]
 
     try:
-        logger.info(f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern}, threshold: {score_threshold})")
+        logger.info(
+            f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern}, threshold: {score_threshold})"
+        )
 
         # Use the existing search_similar method with glob pattern support
         raw_results = embedding_manager.search_similar(
@@ -165,39 +167,39 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
         structured_results = []
         seen_results = set()  # Track (file_path, chunk_index) to prevent duplicates
         seen_content = set()  # Track document content to prevent content duplicates
-        
+
         for result in raw_results:
             # When re-ranking is enabled, use rerank_score as the primary score
             # Otherwise, use the original embedding similarity score
             primary_score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
-            
+
             # Apply score threshold filter
             if primary_score < score_threshold:
                 continue
-            
+
             # Create unique identifiers for this result
             file_path = result.get("file_path", "")
             chunk_index = result.get("chunk_index", 0)
             document_content = result.get("document", "")
-            
+
             result_key = (file_path, chunk_index)
             # Create a hash of the content for duplicate detection (use first 100 chars for efficiency)
             content_hash = hash(document_content[:100]) if document_content else 0
-            
+
             # Skip if we've already seen this exact result by file path and chunk index
             if result_key in seen_results:
                 logger.debug(f"Skipping duplicate result by location: {file_path} (chunk {chunk_index})")
                 continue
-            
+
             # Skip if we've seen this exact content before (helps with edge cases)
             if content_hash in seen_content and document_content:
                 logger.debug(f"Skipping duplicate result by content: {file_path} (chunk {chunk_index})")
                 continue
-            
+
             seen_results.add(result_key)
             if document_content:  # Only track content hash for non-empty content
                 seen_content.add(content_hash)
-            
+
             structured_result = RAGSearchResult(
                 file_path=file_path,
                 document=document_content,
@@ -252,15 +254,13 @@ def get_database_stats() -> str:
         collection_info = embedding_manager.client.get_collection(collection_name=embedding_manager.collection_name)
 
         # Get memory statistics
-        memory_stats = embedding_manager.get_memory_stats()
 
         stats = {
             "collection_name": embedding_manager.collection_name,
             "collection_status": str(collection_info.status),
             "vector_size": embedding_manager.vector_size,
             "embedding_model": embedding_manager.model_name,
-            "indexed_files": len(embedding_manager.file_hashes),
-            "memory_stats": memory_stats,
+            "points_count": collection_info.points_count,
         }
 
         return yaml.dump(stats, default_flow_style=False)

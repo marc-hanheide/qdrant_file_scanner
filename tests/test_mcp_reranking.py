@@ -27,7 +27,7 @@ class TestMCPServerReranking(unittest.TestCase):
             chunk_index=0,
             is_deleted=False,
             rerank_score=0.95,
-            original_score=0.62
+            original_score=0.62,
         )
 
         self.assertEqual(result_with_rerank.score, 0.95)
@@ -44,7 +44,7 @@ class TestMCPServerReranking(unittest.TestCase):
             chunk_index=0,
             is_deleted=False,
             rerank_score=None,
-            original_score=None
+            original_score=None,
         )
 
         self.assertEqual(result_without_rerank.score, 0.62)
@@ -61,7 +61,7 @@ class TestMCPServerReranking(unittest.TestCase):
                 chunk_index=0,
                 is_deleted=False,
                 rerank_score=0.95,
-                original_score=0.60
+                original_score=0.60,
             ),
             RAGSearchResult(
                 file_path="/test/file2.pdf",
@@ -70,16 +70,11 @@ class TestMCPServerReranking(unittest.TestCase):
                 chunk_index=1,
                 is_deleted=False,
                 rerank_score=0.88,
-                original_score=0.70
-            )
+                original_score=0.70,
+            ),
         ]
 
-        response = RAGSearchResponse(
-            results=results,
-            query="test query",
-            total_results=2,
-            filtered_by_pattern="*.pdf"
-        )
+        response = RAGSearchResponse(results=results, query="test query", total_results=2, filtered_by_pattern="*.pdf")
 
         self.assertEqual(len(response.results), 2)
         self.assertEqual(response.query, "test query")
@@ -89,9 +84,9 @@ class TestMCPServerReranking(unittest.TestCase):
         # Verify results are properly sorted (highest score first)
         self.assertGreaterEqual(response.results[0].score, response.results[1].score)
 
-    @patch('mcp_server.EmbeddingManager')
-    @patch('mcp_server.yaml.safe_load')
-    @patch('mcp_server.Path.exists')
+    @patch("mcp_server.EmbeddingManager")
+    @patch("mcp_server.yaml.safe_load")
+    @patch("mcp_server.Path.exists")
     def test_mcp_server_score_priority(self, mock_exists, mock_yaml_load, mock_embedding_manager):
         """Test that MCP server properly prioritizes rerank_score over original score"""
         # Mock configuration
@@ -100,7 +95,7 @@ class TestMCPServerReranking(unittest.TestCase):
             "qdrant": {"host": "localhost", "port": 6333},
             "embedding": {"model_name": "test-model"},
             "reranker": {"enabled": True},
-            "logging": {"level": "INFO"}
+            "logging": {"level": "INFO"},
         }
 
         # Mock embedding manager results with re-ranking
@@ -113,7 +108,7 @@ class TestMCPServerReranking(unittest.TestCase):
                 "chunk_index": 0,
                 "is_deleted": False,
                 "rerank_score": 0.95,  # Higher re-ranking score
-                "original_score": 0.60
+                "original_score": 0.60,
             },
             {
                 "file_path": "/test/file2.pdf",
@@ -122,8 +117,8 @@ class TestMCPServerReranking(unittest.TestCase):
                 "chunk_index": 1,
                 "is_deleted": False,
                 "rerank_score": 0.88,  # Lower re-ranking score
-                "original_score": 0.70
-            }
+                "original_score": 0.70,
+            },
         ]
         mock_embedding_manager.return_value = mock_embedding_instance
 
@@ -136,7 +131,7 @@ class TestMCPServerReranking(unittest.TestCase):
         structured_results = []
         for result in raw_results:
             primary_score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
-            
+
             structured_result = {
                 "file_path": result.get("file_path", ""),
                 "document": result.get("document", ""),
@@ -151,7 +146,7 @@ class TestMCPServerReranking(unittest.TestCase):
         # Verify that the primary score is the rerank_score
         self.assertEqual(structured_results[0]["score"], 0.95)  # Should use rerank_score
         self.assertEqual(structured_results[1]["score"], 0.88)  # Should use rerank_score
-        
+
         # Verify original scores are preserved
         self.assertEqual(structured_results[0]["original_score"], 0.60)
         self.assertEqual(structured_results[1]["original_score"], 0.70)
