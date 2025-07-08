@@ -253,14 +253,14 @@ def get_database_stats() -> str:
     try:
         # Get collection information
         collection_info = embedding_manager.client.get_collection(collection_name=embedding_manager.collection_name)
-        
+
         # Get all collections to show context
         all_collections = embedding_manager.client.get_collections()
-                
+
         # Get model status
         embedding_model_loaded = embedding_manager.embedding_model is not None
         reranker_model_loaded = embedding_manager.reranker.cross_encoder is not None
-                
+
         # Build comprehensive statistics
         stats = {
             # Collection Information
@@ -271,16 +271,14 @@ def get_database_stats() -> str:
                 "vector_config": {
                     "size": embedding_manager.vector_size,
                     "vector_name": embedding_manager.vector_name,
-                    "distance_metric": "COSINE"
-                }
+                    "distance_metric": "COSINE",
+                },
             },
-            
             # Document Statistics
             "documents": {
                 "total_chunks": collection_info.points_count,
                 "total_documents": embedding_manager.count_documents(),  # Total documents including deleted
             },
-            
             # Model Information
             "models": {
                 "embedding": {
@@ -292,11 +290,16 @@ def get_database_stats() -> str:
                     "enabled": embedding_manager.reranker.enabled,
                     "name": embedding_manager.reranker.model_name if embedding_manager.reranker.enabled else None,
                     "currently_loaded": reranker_model_loaded,
-                    "last_used": embedding_manager.reranker.model_last_used.isoformat() if embedding_manager.reranker.model_last_used else None,
-                    "top_k_retrieve": embedding_manager.reranker.top_k_retrieve if embedding_manager.reranker.enabled else None
-                }
-            }            
-            
+                    "last_used": (
+                        embedding_manager.reranker.model_last_used.isoformat()
+                        if embedding_manager.reranker.model_last_used
+                        else None
+                    ),
+                    "top_k_retrieve": (
+                        embedding_manager.reranker.top_k_retrieve if embedding_manager.reranker.enabled else None
+                    ),
+                },
+            },
         }
 
         return yaml.dump(stats, default_flow_style=False)

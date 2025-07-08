@@ -588,7 +588,7 @@ class EmbeddingManager:
             facet_result = self.client.facet(
                 limit=collection_info.points_count,
                 collection_name=self.collection_name,
-                key="file_path"  # Use file_path to count unique documents
+                key="file_path",  # Use file_path to count unique documents
             )
             self.logger.info(f"Facet result returned {len(facet_result.hits)} unique file_paths")
 
