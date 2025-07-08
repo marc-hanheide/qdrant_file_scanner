@@ -60,6 +60,13 @@ embedding:
   chunk_size: 1024  # Characters per chunk
   chunk_overlap: 200  # Overlap between chunks
 
+reranker:
+  enabled: true
+  model_name: cross-encoder/ms-marco-MiniLM-L6-v2
+  top_k_retrieve: 50
+  score_threshold: 0.0
+  unload_after_idle_minutes: 15
+
 # Processing configuration
 processing:
   max_file_size_mb: 5  # Skip files larger than this
@@ -85,6 +92,7 @@ memory:
 
 # Logging
 logging:
+  mcp_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   level: "WARNING"  # DEBUG, INFO, WARNING, ERROR
   file: "/tmp/rag_monitor.log"
   mcp_logfile: "/tmp/mcp_server.log"

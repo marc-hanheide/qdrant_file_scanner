@@ -39,6 +39,8 @@ except ImportError:
     MatchText = None
     PayloadSchemaType = None
 
+from .reranker import ReRanker
+
 # from ..memory_utils import ModelManager
 
 
@@ -82,6 +84,9 @@ class EmbeddingManager:
         self.file_hashes = {}  # Local cache: {file_path: {'hash': hash_value, 'timestamp': time}}
         self.hash_cache_ttl = config.get("memory", {}).get("hash_cache_ttl_seconds", 300)  # 5 minutes default
         self.hash_cache_lock = threading.Lock()  # Thread safety for cache operations
+
+        # Initialize re-ranker
+        self.reranker = ReRanker(config)
 
         if not slim_mode:
             self.logger.info("Hash retrieval will be done on-demand with local caching")
@@ -479,9 +484,12 @@ class EmbeddingManager:
     def search_similar(
         self, query: str, limit: int = 5, include_deleted: bool = True, glob_pattern: Optional[str] = None
     ) -> List[Dict]:
-        """Search for similar documents with optional glob pattern filtering"""
+        """Search for similar documents with optional glob pattern filtering and re-ranking"""
         try:
             query_embedding = self.generate_embeddings([query])[0]
+
+            # Calculate retrieval limit for re-ranking
+            retrieval_limit = self.reranker.calculate_retrieval_limit(limit)
 
             # Build search filter conditions using proper Qdrant filter format
             filter_conditions = []
@@ -504,10 +512,10 @@ class EmbeddingManager:
                     use_post_processing = True
 
             # Set search limit based on whether we need post-processing
-            effective_limit = limit
+            effective_limit = retrieval_limit
             if use_post_processing:
                 # Increase limit to account for post-processing filtering
-                effective_limit = min(limit * 100, 1000)
+                effective_limit = min(retrieval_limit * 100, 1000)
 
             # Combine all filter conditions
             search_filter = None
@@ -536,7 +544,7 @@ class EmbeddingManager:
                     result["deletion_timestamp"] = hit.payload.get("deletion_timestamp")
 
                 # Apply post-processing glob filter if needed
-                if glob_pattern:
+                if use_post_processing and glob_pattern:
                     file_path = result.get("file_path", "")
                     if not self._matches_glob_pattern(file_path, glob_pattern):
                         continue
@@ -544,10 +552,13 @@ class EmbeddingManager:
                 results.append(result)
 
                 # Stop once we have enough results (for post-processing case)
-                if len(results) >= limit:
+                if len(results) >= retrieval_limit:
                     break
 
-            return results
+            # Apply re-ranking if enabled
+            final_results = self.reranker.rerank_results(query, results, limit)
+
+            return final_results
 
         except Exception as e:
             self.logger.error(f"Error searching: {str(e)}")
@@ -567,6 +578,26 @@ class EmbeddingManager:
 
         # Use fnmatch for the actual pattern matching
         return fnmatch.fnmatch(file_path_lower, glob_pattern_lower)
+
+    def count_documents(self) -> int:
+        """Count total documents in the collection"""
+        try:
+            # Use facet to count unique documents by file_path
+            collection_info = self.client.get_collection(collection_name=self.collection_name)
+            self.logger.info("Counting unique documents in collection")
+            facet_result = self.client.facet(
+                limit=collection_info.points_count,
+                collection_name=self.collection_name,
+                key="file_path",  # Use file_path to count unique documents
+            )
+            self.logger.info(f"Facet result returned {len(facet_result.hits)} unique file_paths")
+
+            # FacetResponse contains a 'hits' field with the facet results
+            return len(facet_result.hits)  # Return the count of unique file_paths
+
+        except Exception as e:
+            self.logger.error(f"Error counting documents: {str(e)}")
+            return 0
 
     def get_deleted_documents(self) -> List[Dict]:
         """Get list of all documents marked as deleted"""
@@ -631,6 +662,16 @@ class EmbeddingManager:
             import gc
 
             gc.collect()
+
+    def preload_model(self):
+        """Pre-load the embedding model for faster response times"""
+        try:
+            self.logger.info(f"Pre-loading embedding model: {self.model_name}")
+            _ = self._get_embedding_model()
+            self.logger.info("Embedding model pre-loaded successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to pre-load embedding model: {e}")
+            raise
 
     def _validate_embedding(self, embedding: List[float], text_sample: str = "") -> Optional[List[float]]:
         """Validate embedding vector to ensure it's suitable for Qdrant"""
@@ -718,39 +759,13 @@ class EmbeddingManager:
                 self.unload_embedding_model()
                 model_unloaded = True
 
+        # Also check and unload re-ranker model
+        reranker_unloaded = self.reranker.check_and_unload_idle_model()
+
         # Also cleanup expired hash cache entries
         self._cleanup_expired_cache_entries()
 
-        return model_unloaded
-
-    def get_memory_stats(self) -> Dict[str, Any]:
-        """Get memory usage statistics"""
-        hash_cache_stats = self.get_hash_cache_stats()
-        return {
-            "file_hashes_cache_entries": hash_cache_stats["total_entries"],
-            "file_hashes_valid_entries": hash_cache_stats["valid_entries"],
-            "file_hashes_expired_entries": hash_cache_stats["expired_entries"],
-            "embedding_model_loaded": self.embedding_model is not None,
-            "model_last_used": self.model_last_used.isoformat() if self.model_last_used else None,
-            "operation_counter": self.operation_counter,
-            "hash_cache_ttl_seconds": self.hash_cache_ttl,
-        }
-
-    def get_hash_cache_stats(self) -> Dict[str, Any]:
-        """Get statistics about the hash cache for monitoring"""
-        with self.hash_cache_lock:
-            total_entries = len(self.file_hashes)
-            current_time = time.time()
-            valid_entries = sum(1 for entry in self.file_hashes.values() if self._is_cache_entry_valid(entry))
-            expired_entries = total_entries - valid_entries
-
-            return {
-                "total_entries": total_entries,
-                "valid_entries": valid_entries,
-                "expired_entries": expired_entries,
-                "cache_ttl_seconds": self.hash_cache_ttl,
-                "hit_rate_info": "Hash cache provides on-demand querying with local caching",
-            }
+        return model_unloaded or reranker_unloaded
 
     def _debug_text_content(self, text_content: str, file_path: str) -> Dict[str, Any]:
         """Debug helper to analyze text content that might cause embedding issues"""

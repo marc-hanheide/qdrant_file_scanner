@@ -85,12 +85,52 @@ class RAGSearchCLI:
             query=query, limit=limit, include_deleted=include_deleted, glob_pattern=glob_pattern
         )
 
-        # Apply additional filters
+        # Check if re-ranking was applied
+        has_rerank_scores = any(result.get("rerank_score") is not None for result in results)
+        if has_rerank_scores:
+            self.logger.info(f"Re-ranking applied - results sorted by rerank_score")
+        else:
+            self.logger.info(f"Using embedding similarity scores only")
+
+        # Apply score threshold and deduplication with comprehensive deduplication
+        # Deduplication strategy:
+        # 1. Primary: Track (file_path, chunk_index) pairs to prevent exact duplicates
+        # 2. Secondary: Track content hashes to catch edge cases with duplicate content
         filtered_results = []
+        seen_results = set()  # Track (file_path, chunk_index) to prevent duplicates
+        seen_content = set()  # Track document content to prevent content duplicates
+
         for result in results:
-            # Filter by minimum score
-            if result.get("score", 0) < min_score:
+            # When re-ranking is enabled, use rerank_score as the primary score
+            # Otherwise, use the original embedding similarity score
+            primary_score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
+
+            # Apply score threshold filter
+            if primary_score < min_score:
                 continue
+
+            # Create unique identifiers for this result
+            file_path = result.get("file_path", "")
+            chunk_index = result.get("chunk_index", 0)
+            document_content = result.get("document", "")
+
+            result_key = (file_path, chunk_index)
+            # Create a hash of the content for duplicate detection (use first 100 chars for efficiency)
+            content_hash = hash(document_content[:100]) if document_content else 0
+
+            # Skip if we've already seen this exact result by file path and chunk index
+            if result_key in seen_results:
+                self.logger.debug(f"Skipping duplicate result by location: {file_path} (chunk {chunk_index})")
+                continue
+
+            # Skip if we've seen this exact content before (helps with edge cases)
+            if content_hash in seen_content and document_content:
+                self.logger.debug(f"Skipping duplicate result by content: {file_path} (chunk {chunk_index})")
+                continue
+
+            seen_results.add(result_key)
+            if document_content:  # Only track content hash for non-empty content
+                seen_content.add(content_hash)
 
             # Filter by date range (if provided)
             if start_date or end_date:
@@ -102,8 +142,12 @@ class RAGSearchCLI:
                     if end_date and file_timestamp > self._parse_date(end_date):
                         continue
 
-            filtered_results.append(result)
+            # Update the result to use primary score for consistency
+            result_copy = result.copy()
+            result_copy["score"] = primary_score
+            filtered_results.append(result_copy)
 
+        self.logger.info(f"CLI search completed: {len(filtered_results)} unique results returned (threshold: {min_score})")
         return filtered_results
 
     def search_by_example(
@@ -155,7 +199,8 @@ class RAGSearchCLI:
             )
 
             results = []
-            seen_files = set()
+            seen_results = set()  # Track (file_path, chunk_index) to prevent duplicates
+            seen_content = set()  # Track document content to prevent content duplicates
 
             for point in scroll_result[0]:
                 file_path = point.payload.get("file_path", "")
@@ -166,16 +211,33 @@ class RAGSearchCLI:
                 if not fnmatch.fnmatch(file_path.lower(), glob_pattern.lower()):
                     continue
 
-                # Avoid duplicate files
-                if file_path in seen_files:
+                # Create unique identifiers for comprehensive deduplication
+                chunk_index = point.payload.get("chunk_index", 0)
+                document_content = point.payload.get("document", "")
+
+                result_key = (file_path, chunk_index)
+                # Create a hash of the content for duplicate detection (use first 100 chars for efficiency)
+                content_hash = hash(document_content[:100]) if document_content else 0
+
+                # Skip if we've already seen this exact result by file path and chunk index
+                if result_key in seen_results:
+                    self.logger.debug(f"Skipping duplicate result by location: {file_path} (chunk {chunk_index})")
                     continue
-                seen_files.add(file_path)
+
+                # Skip if we've seen this exact content before (helps with edge cases)
+                if content_hash in seen_content and document_content:
+                    self.logger.debug(f"Skipping duplicate result by content: {file_path} (chunk {chunk_index})")
+                    continue
+
+                seen_results.add(result_key)
+                if document_content:  # Only track content hash for non-empty content
+                    seen_content.add(content_hash)
 
                 result = {
                     "file_path": file_path,
-                    "document": point.payload.get("document", ""),
+                    "document": document_content,
                     "score": 1.0,  # Perfect match for glob search
-                    "chunk_index": point.payload.get("chunk_index", 0),
+                    "chunk_index": chunk_index,
                     "is_deleted": point.payload.get("is_deleted", False),
                     "deletion_timestamp": point.payload.get("deletion_timestamp"),
                 }
@@ -193,6 +255,7 @@ class RAGSearchCLI:
 
             # Sort by file path for consistent output
             results.sort(key=lambda x: x["file_path"])
+            self.logger.info(f"Glob search completed: {len(results)} unique results returned")
             return results
 
         except Exception as e:
@@ -345,7 +408,8 @@ class RAGSearchCLI:
 
         for i, result in enumerate(results, 1):
             file_path = result.get("file_path", "Unknown")
-            score = result.get("score", 0.0)
+            # Use rerank_score as primary score when available, otherwise use original score
+            score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
             is_deleted = result.get("is_deleted", False)
 
             # Basic info
@@ -353,7 +417,13 @@ class RAGSearchCLI:
             output.append(f"{i:3}. {file_path}{status}")
 
             if verbose:
-                output.append(f"     Score: {score:.4f}")
+                if result.get("rerank_score") is not None:
+                    score_display = (
+                        f"Re-rank Score: {result.get('rerank_score'):.4f} (Original: {result.get('original_score', 0.0):.4f})"
+                    )
+                else:
+                    score_display = f"Score: {score:.4f}"
+                output.append(f"     {score_display}")
                 output.append(f"     Chunk: {result.get('chunk_index', 0)}")
 
                 if is_deleted and result.get("deletion_timestamp"):
@@ -369,7 +439,11 @@ class RAGSearchCLI:
                 output.append("")  # Empty line for spacing
             else:
                 # Brief format - just show score
-                output.append(f"     Score: {score:.4f}")
+                if result.get("rerank_score") is not None:
+                    score_display = f"Re-rank Score: {result.get('rerank_score'):.4f}"
+                else:
+                    score_display = f"Score: {score:.4f}"
+                output.append(f"     {score_display}")
 
         return "\n".join(output)
 
@@ -411,10 +485,18 @@ class RAGSearchCLI:
             # Show all chunks for this file
             for i, result in enumerate(file_results):
                 chunk_index = result.get("chunk_index", 0)
-                score = result.get("score", 0.0)
+                # Use rerank_score as primary score when available
+                primary_score = (
+                    result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
+                )
+                original_score = result.get("score", 0.0)
                 document = result.get("document", "")
 
-                output.append(f"\n### Chunk {chunk_index} (Similarity Score: {score:.4f})")
+                if result.get("rerank_score") is not None:
+                    score_display = f"Re-ranking Score: {result.get('rerank_score'):.4f} (Original: {original_score:.4f})"
+                else:
+                    score_display = f"Similarity Score: {primary_score:.4f}"
+                output.append(f"\n### Chunk {chunk_index} ({score_display})")
 
                 if document:
                     # Format the document content as a markdown quote
