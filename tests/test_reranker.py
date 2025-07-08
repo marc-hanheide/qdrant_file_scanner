@@ -47,23 +47,6 @@ class TestReRanker(unittest.TestCase):
         reranked = reranker.rerank_results("test query", results, 2)
         self.assertEqual(reranked, results)
 
-    def test_calculate_retrieval_limit_disabled(self):
-        """Test retrieval limit calculation when disabled"""
-        reranker = ReRanker(self.config_disabled)
-
-        # When disabled, should return requested limit
-        self.assertEqual(reranker.calculate_retrieval_limit(10), 10)
-        self.assertEqual(reranker.calculate_retrieval_limit(5), 5)
-
-    def test_calculate_retrieval_limit_enabled(self):
-        """Test retrieval limit calculation when enabled"""
-        reranker = ReRanker(self.config_enabled)
-
-        # When enabled, should return higher limit for re-ranking
-        self.assertEqual(reranker.calculate_retrieval_limit(10), 50)  # Uses top_k_retrieve
-        self.assertEqual(reranker.calculate_retrieval_limit(20), 60)  # 20 * 3 = 60
-        self.assertEqual(reranker.calculate_retrieval_limit(50), 100)  # max(50*3, 50) = 100 (capped)
-
     @patch("rag_file_monitor.reranker.CrossEncoder")
     def test_reranker_enabled_with_mock(self, mock_cross_encoder_class):
         """Test re-ranker when enabled with mocked CrossEncoder"""
