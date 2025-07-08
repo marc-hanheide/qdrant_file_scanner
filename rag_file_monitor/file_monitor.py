@@ -155,13 +155,13 @@ class FileMonitorHandler(FileSystemEventHandler):
         if not event.is_directory and self.should_process_file(event.src_path):
             self.logger.info(f"New file detected: {event.src_path}")
             print(f"New file detected: {event.src_path}", file=sys.stderr)
-            self.process_file(event.src_path)
+            self.process_file(event.src_path, force_reindex=True)
 
     def on_modified(self, event):
         if not event.is_directory and self.should_process_file(event.src_path):
             self.logger.info(f"File modified: {event.src_path}")
             print(f"File modified: {event.src_path}", file=sys.stderr)
-            self.process_file(event.src_path)
+            self.process_file(event.src_path, force_reindex=True)
 
     def on_deleted(self, event):
         if not event.is_directory:
@@ -182,15 +182,22 @@ class FileMonitorHandler(FileSystemEventHandler):
                 self.embedding_manager.mark_document_as_deleted(event.src_path)
 
             if self.should_process_file(event.dest_path):
-                self.process_file(event.dest_path)
+                self.process_file(event.dest_path, force_reindex=True)
 
-    def process_file(self, file_path: str):
+    def process_file(self, file_path: str, force_reindex: bool = False):
         """Process a single file"""
         try:
             # Check if directory is configured as static files (skip hash checks for performance)
             static_files = self.directory_config.get("static_files", False)
             
-            if static_files:
+            # Check minimum file size (skip very small files)
+            file_size = os.path.getsize(file_path)
+            if file_size < 10:
+                self.logger.info(f"File {file_path} is too small ({file_size} bytes), skipping")
+                return
+            
+            current_hash = ""
+            if not force_reindex and static_files:
                 # For static files, assume file hasn't changed and check if already indexed
                 stored_hash = self.embedding_manager._get_cached_file_hash(file_path)
                 if stored_hash is not None:
@@ -198,16 +205,15 @@ class FileMonitorHandler(FileSystemEventHandler):
                     return
                 
                 # File not indexed yet, use empty hash for indexing
-                current_hash = ""
                 self.logger.info(f"File {file_path} in static directory needs initial indexing (no hash check)")
-            else:
-                # Normal file processing with hash check
-                current_hash = self.get_file_hash(file_path)
-                if self.embedding_manager.is_file_unchanged(file_path, current_hash):
-                    self.logger.info(f"File {file_path} has not changed, skipping indexing")
-                    return
-                
-                self.logger.info(f"Document {file_path} needs indexing, extract text")
+
+            # Normal file processing with hash check
+            current_hash = self.get_file_hash(file_path)
+            if self.embedding_manager.is_file_unchanged(file_path, current_hash) and not force_reindex:
+                self.logger.info(f"File {file_path} has not changed, skipping indexing")
+                return
+                    
+            self.logger.info(f"Document {file_path} needs indexing, extract text")
 
             # Extract text
             text_content = self.text_extractor.extract_text(file_path)

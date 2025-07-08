@@ -48,7 +48,14 @@ class TextExtractor:
         """Extract text from file based on its type"""
         path = Path(file_path)
         extension = path.suffix.lower()
-
+        # Check if file exists and has content
+        if not path.exists():
+            self.logger.warning(f"File does not exist: {file_path}")
+            return ""
+        
+        if path.stat().st_size < 10:
+            self.logger.warning(f"File is too small: {file_path}")
+            return ""
         try:
             result = ""
             if extension == ".pdf":
