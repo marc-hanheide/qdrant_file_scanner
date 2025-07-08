@@ -70,15 +70,9 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
     # Setup logging
     logging_config = config.get("logging", {})
-    log_level = getattr(logging, logging_config.get("level", "INFO").upper())
+    log_level = getattr(logging, logging_config.get("mcp_level", "INFO").upper())
 
-    # Configure logging
-    log_file = logging_config.get("mcp_logfile", "mcp_rag_server.log")
 
-    # Create file handler with explicit settings
-    file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
-    file_handler.setLevel(log_level)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 
     # Create stream handler
     stream_handler = logging.StreamHandler()
@@ -88,7 +82,6 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
-    root_logger.addHandler(file_handler)
     root_logger.addHandler(stream_handler)
 
     logger = logging.getLogger(__name__)
@@ -98,6 +91,17 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         # Initialize embedding manager
         embedding_manager = EmbeddingManager(config, slim_mode=False)
         logger.info("RAG system initialized successfully")
+
+        # Pre-load models at startup for faster response times
+        logger.info("Pre-loading models for fast MCP responses...")
+        
+        # Pre-load embedding model
+        embedding_manager.preload_model()
+            
+        # Pre-load reranker model if enabled
+        embedding_manager.reranker.preload_model()
+
+        logger.info("All models pre-loaded, MCP server ready for fast responses")
 
         yield {"embedding_manager": embedding_manager, "config": config, "logger": logger}
     except Exception as e:

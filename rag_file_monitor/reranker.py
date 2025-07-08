@@ -153,3 +153,17 @@ class ReRanker:
             self.unload_model()
             return True
         return False
+
+    def preload_model(self):
+        """Pre-load the cross-encoder model for faster response times"""
+        if not self.enabled:
+            self.logger.info("Re-ranker disabled, skipping model pre-loading")
+            return
+
+        try:
+            self.logger.info(f"Pre-loading cross-encoder model: {self.model_name}")
+            _ = self._get_cross_encoder()
+            self.logger.info("Cross-encoder model pre-loaded successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to pre-load cross-encoder model: {e}")
+            raise

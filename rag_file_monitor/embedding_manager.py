@@ -643,6 +643,16 @@ class EmbeddingManager:
 
             gc.collect()
 
+    def preload_model(self):
+        """Pre-load the embedding model for faster response times"""
+        try:
+            self.logger.info(f"Pre-loading embedding model: {self.model_name}")
+            _ = self._get_embedding_model()
+            self.logger.info("Embedding model pre-loaded successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to pre-load embedding model: {e}")
+            raise
+
     def _validate_embedding(self, embedding: List[float], text_sample: str = "") -> Optional[List[float]]:
         """Validate embedding vector to ensure it's suitable for Qdrant"""
         try:
