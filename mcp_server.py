@@ -144,13 +144,24 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
             glob_pattern=glob_pattern,
         )
 
+        # Check if re-ranking was applied
+        has_rerank_scores = any(result.get("rerank_score") is not None for result in raw_results)
+        if has_rerank_scores:
+            logger.info(f"Re-ranking applied - results sorted by rerank_score")
+        else:
+            logger.info(f"Using embedding similarity scores only")
+
         # Convert to structured results
         structured_results = []
         for result in raw_results:
+            # When re-ranking is enabled, use rerank_score as the primary score
+            # Otherwise, use the original embedding similarity score
+            primary_score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
+            
             structured_result = RAGSearchResult(
                 file_path=result.get("file_path", ""),
                 document=result.get("document", ""),
-                score=result.get("score", 0.0),
+                score=primary_score,  # Use rerank_score as primary score when available
                 chunk_index=result.get("chunk_index", 0),
                 is_deleted=result.get("is_deleted", False),
                 deletion_timestamp=result.get("deletion_timestamp"),
@@ -182,6 +193,7 @@ def get_rag_config() -> str:
         "qdrant": config.get("qdrant", {}),
         "mcp": __file__,
         "embedding": config.get("embedding", {}),
+        "reranker": config.get("reranker", {}),
         "directories": config.get("directories", {}),
         "file_extensions": config.get("file_extensions", []),
     }

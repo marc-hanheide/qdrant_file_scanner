@@ -128,7 +128,7 @@ class ReRanker:
             return requested_limit
 
         # Retrieve more results than needed to improve re-ranking quality
-        return min(max(requested_limit * 3, self.top_k_retrieve), 100)
+        return min(max(requested_limit * 4, self.top_k_retrieve), 100)
 
     def unload_model(self):
         """Unload cross-encoder model to free memory"""

@@ -88,8 +88,9 @@ class RAGSearchCLI:
         # Apply additional filters
         filtered_results = []
         for result in results:
-            # Filter by minimum score
-            if result.get("score", 0) < min_score:
+            # Filter by minimum score - use rerank_score if available, otherwise use original score
+            current_score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0)
+            if current_score < min_score:
                 continue
 
             # Filter by date range (if provided)
@@ -345,7 +346,8 @@ class RAGSearchCLI:
 
         for i, result in enumerate(results, 1):
             file_path = result.get("file_path", "Unknown")
-            score = result.get("score", 0.0)
+            # Use rerank_score as primary score when available, otherwise use original score
+            score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
             is_deleted = result.get("is_deleted", False)
 
             # Basic info
@@ -353,9 +355,10 @@ class RAGSearchCLI:
             output.append(f"{i:3}. {file_path}{status}")
 
             if verbose:
-                score_display = f"Score: {score:.4f}"
                 if result.get("rerank_score") is not None:
-                    score_display += f" (re-ranked: {result.get('rerank_score'):.4f})"
+                    score_display = f"Re-rank Score: {result.get('rerank_score'):.4f} (Original: {result.get('score', 0.0):.4f})"
+                else:
+                    score_display = f"Score: {score:.4f}"
                 output.append(f"     {score_display}")
                 output.append(f"     Chunk: {result.get('chunk_index', 0)}")
 
@@ -372,9 +375,10 @@ class RAGSearchCLI:
                 output.append("")  # Empty line for spacing
             else:
                 # Brief format - just show score
-                score_display = f"Score: {score:.4f}"
                 if result.get("rerank_score") is not None:
-                    score_display += f" (re-ranked: {result.get('rerank_score'):.4f})"
+                    score_display = f"Re-rank Score: {result.get('rerank_score'):.4f}"
+                else:
+                    score_display = f"Score: {score:.4f}"
                 output.append(f"     {score_display}")
 
         return "\n".join(output)
@@ -417,12 +421,15 @@ class RAGSearchCLI:
             # Show all chunks for this file
             for i, result in enumerate(file_results):
                 chunk_index = result.get("chunk_index", 0)
-                score = result.get("score", 0.0)
+                # Use rerank_score as primary score when available
+                primary_score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
+                original_score = result.get("score", 0.0)
                 document = result.get("document", "")
 
-                score_display = f"Similarity Score: {score:.4f}"
                 if result.get("rerank_score") is not None:
-                    score_display = f"Re-ranking Score: {result.get('rerank_score'):.4f} (Original: {score:.4f})"
+                    score_display = f"Re-ranking Score: {result.get('rerank_score'):.4f} (Original: {original_score:.4f})"
+                else:
+                    score_display = f"Similarity Score: {primary_score:.4f}"
                 output.append(f"\n### Chunk {chunk_index} ({score_display})")
 
                 if document:
