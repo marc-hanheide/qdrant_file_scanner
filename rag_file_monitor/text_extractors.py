@@ -69,6 +69,7 @@ class TextExtractor:
             if not result.strip():
                 self.logger.warning(f"No text extracted from {file_path}, using fallback text")
                 return self.fallback_text
+            return result
 
         except Exception as e:
             self.logger.warning(f"Error extracting text from {file_path}: {str(e)}")
