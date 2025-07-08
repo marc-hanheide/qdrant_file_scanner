@@ -456,10 +456,12 @@ class EmbeddingManager:
                 extension = glob_pattern[1:]  # Include the dot
                 # Use MatchText to find files ending with the extension
                 if MatchText is not None:
-                    caseinsensitive_filter = Filter(should=[
-                        FieldCondition(key="file_path", match=MatchText(text=extension.lower())),
-                        FieldCondition(key="file_path", match=MatchText(text=extension.upper()))
-                    ])
+                    caseinsensitive_filter = Filter(
+                        should=[
+                            FieldCondition(key="file_path", match=MatchText(text=extension.lower())),
+                            FieldCondition(key="file_path", match=MatchText(text=extension.upper())),
+                        ]
+                    )
                     filter_conditions.append(caseinsensitive_filter)
                 return filter_conditions
 
@@ -581,7 +583,7 @@ class EmbeddingManager:
             # This is a simple file extension pattern like "*.pdf"
             extension = glob_pattern[1:]  # Remove the * but keep the dot
             return file_path.lower().endswith(extension.lower())
-        
+
         # For other patterns, use case-sensitive matching
         return fnmatch.fnmatch(file_path, glob_pattern)
 

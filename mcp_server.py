@@ -114,9 +114,7 @@ mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
 
 
 @mcp.tool()
-def rag_search(
-    query: str, number_docs: int = 10, glob_pattern: str = "", score_threshold: float = 0.0
-) -> RAGSearchResponse:
+def rag_search(query: str, number_docs: int = 10, glob_pattern: str = "", score_threshold: float = 0.0) -> RAGSearchResponse:
     """
     Search for relevant documents in the RAG database.
 
@@ -125,7 +123,7 @@ def rag_search(
     deduplicated to ensure no duplicate chunks are returned.
 
     To understand what directories are available and their content types for more targeted searches,
-    use the `rag_info` tool first to get information about configured directories and their
+    use the rag_info tool first to get information about configured directories and their
     semantic content descriptions.
 
     Args:
@@ -134,7 +132,7 @@ def rag_search(
         glob_pattern: An optional glob pattern to filter results by file path (case insensitive)
                       Left empty by default means no filtering by glob pattern.
                       Examples: "*.pdf", "*/specific_dir/*", "*report*"
-                      Use the `rag_info` tool to understand which directories are available
+                      Use the rag_info tool to understand which directories are available
                       and their content types for targeted searches if you want to limit the search scope
         score_threshold: Minimum similarity score for results to be included (0.0-1.0, default: 0.0)
                          Higher values return only more relevant results, a value of 0.5 offers a good trade-off to start with
@@ -328,7 +326,7 @@ def find_files_about(topic: str) -> str:
     """
     return f"""I need to find files about "{topic}". Please use the rag_search tool to search for relevant documents.
 
-You can use the `rag_info` tool to understand which directories are configured 
+You can use the rag_info tool to understand which directories are configured 
 and their semantic content. This will help you choose appropriate glob patterns for targeted searches if those are needed.
 
 After finding the results:
@@ -386,7 +384,7 @@ def find_emails_about(subject_or_content: str, date_range: str = None) -> str:
     return f"""I need to find emails about "{subject_or_content}"{date_instruction}.
 
 Please search for emails using these steps:
-1. First, use the `rag_info` tool to identify directories containing emails and correspondence
+1. First, use the rag_info tool to identify directories containing emails and correspondence
 2. Look for directories with semantic content related to emails, correspondence, or messages  
 3. Use rag_search with appropriate glob patterns based on the email directories found
 4. Look for emails matching the subject or containing the specified content
@@ -437,13 +435,13 @@ Search Strategy: {search_strategy}
 {strategy_instruction}
 
 Please help me find and organize information by:
-1. Using the `rag_info` tool to understand directory content types
+1. Using the rag_info tool to understand directory content types
 2. Using rag_search with appropriate keywords and patterns
 3. Identifying the most relevant documents
 4. Organizing results by relevance and type
 5. Providing actionable next steps or direct links where possible
 
-Use the directory information from `rag_info` tool to target your searches effectively.
+Use the directory information from rag_info tool to target your searches effectively.
 
 Search query: {query}"""
 
@@ -570,7 +568,7 @@ def rag_info() -> Dict[str, Any]:
     - Available file types and patterns for filtering
     - Usage guidance for effective searching
 
-    Use this tool to understand what content is available before performing searches with `rag_search`.
+    Use this tool to understand what content is available before performing searches with rag_search.
 
     Returns:
         Dict containing directory information, document counts, and usage guidance
