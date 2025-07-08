@@ -311,7 +311,9 @@ class TestFileMonitorHandler:
         )
         
         # Mock get_file_hash to ensure it's not called in static mode
-        with patch.object(handler, 'get_file_hash') as mock_get_hash:
+        # Also mock os.path.getsize since we're using fake file paths
+        with patch.object(handler, 'get_file_hash') as mock_get_hash, \
+             patch('os.path.getsize', return_value=100) as mock_getsize:
             handler.process_file("/test/static_dir/file.txt")
             
             # get_file_hash should NOT be called for static files
@@ -344,8 +346,9 @@ class TestFileMonitorHandler:
             directory_config=normal_config,
         )
         
-        # Mock get_file_hash to return a hash
-        with patch.object(handler, 'get_file_hash', return_value="file_hash") as mock_get_hash:
+        # Mock get_file_hash to return a hash and mock os.path.getsize
+        with patch.object(handler, 'get_file_hash', return_value="file_hash") as mock_get_hash, \
+             patch('os.path.getsize', return_value=100) as mock_getsize:
             handler.process_file("/test/normal_dir/file.txt")
             
             # get_file_hash SHOULD be called for normal files
