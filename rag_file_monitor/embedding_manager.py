@@ -579,6 +579,26 @@ class EmbeddingManager:
         # Use fnmatch for the actual pattern matching
         return fnmatch.fnmatch(file_path_lower, glob_pattern_lower)
 
+    def count_documents(self) -> int:
+        """Count total documents in the collection"""
+        try:
+            # Use facet to count unique documents by file_path
+            collection_info = self.client.get_collection(collection_name=self.collection_name)
+            self.logger.info("Counting unique documents in collection")
+            facet_result = self.client.facet(
+                limit=collection_info.points_count,
+                collection_name=self.collection_name,
+                key="file_path"  # Use file_path to count unique documents
+            )
+            self.logger.info(f"Facet result returned {len(facet_result.hits)} unique file_paths")
+
+            # FacetResponse contains a 'hits' field with the facet results
+            return len(facet_result.hits)  # Return the count of unique file_paths
+
+        except Exception as e:
+            self.logger.error(f"Error counting documents: {str(e)}")
+            return 0
+
     def get_deleted_documents(self) -> List[Dict]:
         """Get list of all documents marked as deleted"""
         try:

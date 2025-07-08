@@ -245,22 +245,58 @@ def get_rag_config() -> str:
 
 @mcp.resource("rag-stats://database", title="RAG Database Statistics")
 def get_database_stats() -> str:
-    """Get statistics about the RAG database"""
+    """Get comprehensive statistics about the RAG database and system"""
     ctx = mcp.get_context()
     embedding_manager = ctx.request_context.lifespan_context["embedding_manager"]
+    config = ctx.request_context.lifespan_context["config"]
 
     try:
         # Get collection information
         collection_info = embedding_manager.client.get_collection(collection_name=embedding_manager.collection_name)
-
-        # Get memory statistics
-
+        
+        # Get all collections to show context
+        all_collections = embedding_manager.client.get_collections()
+                
+        # Get model status
+        embedding_model_loaded = embedding_manager.embedding_model is not None
+        reranker_model_loaded = embedding_manager.reranker.cross_encoder is not None
+                
+        # Build comprehensive statistics
         stats = {
-            "collection_name": embedding_manager.collection_name,
-            "collection_status": str(collection_info.status),
-            "vector_size": embedding_manager.vector_size,
-            "embedding_model": embedding_manager.model_name,
-            "points_count": collection_info.points_count,
+            # Collection Information
+            "collection": {
+                "name": embedding_manager.collection_name,
+                "status": str(collection_info.status),
+                "total_points": collection_info.points_count,
+                "vector_config": {
+                    "size": embedding_manager.vector_size,
+                    "vector_name": embedding_manager.vector_name,
+                    "distance_metric": "COSINE"
+                }
+            },
+            
+            # Document Statistics
+            "documents": {
+                "total_chunks": collection_info.points_count,
+                "total_documents": embedding_manager.count_documents(),  # Total documents including deleted
+            },
+            
+            # Model Information
+            "models": {
+                "embedding": {
+                    "name": embedding_manager.model_name,
+                    "currently_loaded": embedding_model_loaded,
+                    "last_used": embedding_manager.model_last_used.isoformat() if embedding_manager.model_last_used else None,
+                },
+                "reranker": {
+                    "enabled": embedding_manager.reranker.enabled,
+                    "name": embedding_manager.reranker.model_name if embedding_manager.reranker.enabled else None,
+                    "currently_loaded": reranker_model_loaded,
+                    "last_used": embedding_manager.reranker.model_last_used.isoformat() if embedding_manager.reranker.model_last_used else None,
+                    "top_k_retrieve": embedding_manager.reranker.top_k_retrieve if embedding_manager.reranker.enabled else None
+                }
+            }            
+            
         }
 
         return yaml.dump(stats, default_flow_style=False)
