@@ -43,11 +43,11 @@ class RAGSearchResult(BaseModel):
 
 
 class RAGSearchResponse(BaseModel):
-    """Complete response for RAG search including metadata"""
+    """Complete response for RAG search including metadata with deduplication"""
 
-    results: List[RAGSearchResult] = Field(description="List of matching document chunks")
+    results: List[RAGSearchResult] = Field(description="List of unique matching document chunks (deduplicated)")
     query: str = Field(description="The original search query")
-    total_results: int = Field(description="Number of results returned")
+    total_results: int = Field(description="Number of unique results returned")
     filtered_by_pattern: Optional[str] = Field(default=None, description="Glob pattern used for filtering, if any")
 
 
@@ -116,21 +116,24 @@ mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
 
 
 @mcp.tool()
-def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = None) -> RAGSearchResponse:
+def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = None, score_threshold: float = 0.0) -> RAGSearchResponse:
     """
     Search for relevant documents in the RAG database.
 
-    This tool searches through indexed documents on this conputer using semantic similarity
-    to find the most relevant content chunks for a given query.
+    This tool searches through indexed documents on this computer using semantic similarity
+    to find the most relevant content chunks for a given query. Results are automatically
+    deduplicated to ensure no duplicate chunks are returned.
 
     Args:
         query: The search string used to find relevant documents
         number_docs: Number of documents to return (default: 10)
         glob_pattern: Optional glob pattern to filter results by file path (case insensitive)
                      Examples: "*.pdf", "*/emails/*", "*report*"
+        score_threshold: Minimum similarity score for results to be included (0.0-1.0, default: 0.0)
+                        Higher values return only more relevant results
 
     Returns:
-        RAGSearchResponse: Structured response containing matching document chunks
+        RAGSearchResponse: Structured response containing unique matching document chunks
     """
     # Get application context
     ctx = mcp.get_context()
@@ -138,7 +141,7 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
     logger = ctx.request_context.lifespan_context["logger"]
 
     try:
-        logger.info(f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern})")
+        logger.info(f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern}, threshold: {score_threshold})")
 
         # Use the existing search_similar method with glob pattern support
         raw_results = embedding_manager.search_similar(
@@ -155,18 +158,51 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
         else:
             logger.info(f"Using embedding similarity scores only")
 
-        # Convert to structured results
+        # Convert to structured results and apply score threshold with comprehensive deduplication
+        # Deduplication strategy:
+        # 1. Primary: Track (file_path, chunk_index) pairs to prevent exact duplicates
+        # 2. Secondary: Track content hashes to catch edge cases with duplicate content
         structured_results = []
+        seen_results = set()  # Track (file_path, chunk_index) to prevent duplicates
+        seen_content = set()  # Track document content to prevent content duplicates
+        
         for result in raw_results:
             # When re-ranking is enabled, use rerank_score as the primary score
             # Otherwise, use the original embedding similarity score
             primary_score = result.get("rerank_score") if result.get("rerank_score") is not None else result.get("score", 0.0)
             
+            # Apply score threshold filter
+            if primary_score < score_threshold:
+                continue
+            
+            # Create unique identifiers for this result
+            file_path = result.get("file_path", "")
+            chunk_index = result.get("chunk_index", 0)
+            document_content = result.get("document", "")
+            
+            result_key = (file_path, chunk_index)
+            # Create a hash of the content for duplicate detection (use first 100 chars for efficiency)
+            content_hash = hash(document_content[:100]) if document_content else 0
+            
+            # Skip if we've already seen this exact result by file path and chunk index
+            if result_key in seen_results:
+                logger.debug(f"Skipping duplicate result by location: {file_path} (chunk {chunk_index})")
+                continue
+            
+            # Skip if we've seen this exact content before (helps with edge cases)
+            if content_hash in seen_content and document_content:
+                logger.debug(f"Skipping duplicate result by content: {file_path} (chunk {chunk_index})")
+                continue
+            
+            seen_results.add(result_key)
+            if document_content:  # Only track content hash for non-empty content
+                seen_content.add(content_hash)
+            
             structured_result = RAGSearchResult(
-                file_path=result.get("file_path", ""),
-                document=result.get("document", ""),
+                file_path=file_path,
+                document=document_content,
                 score=primary_score,  # Use rerank_score as primary score when available
-                chunk_index=result.get("chunk_index", 0),
+                chunk_index=chunk_index,
                 is_deleted=result.get("is_deleted", False),
                 deletion_timestamp=result.get("deletion_timestamp"),
                 rerank_score=result.get("rerank_score"),
@@ -178,7 +214,7 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
             results=structured_results, query=query, total_results=len(structured_results), filtered_by_pattern=glob_pattern
         )
 
-        logger.info(f"RAG search completed: {len(structured_results)} results returned")
+        logger.info(f"RAG search completed: {len(structured_results)} unique results returned (threshold: {score_threshold})")
         return response
 
     except Exception as e:
