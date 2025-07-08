@@ -9,6 +9,7 @@ This module implements a two-stage retrieval system:
 import logging
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from torch.nn import Sigmoid
 
 try:
     from sentence_transformers import CrossEncoder
@@ -50,7 +51,7 @@ class ReRanker:
         if self.cross_encoder is None:
             self.logger.info(f"Loading cross-encoder model: {self.model_name}")
             cache_folder = self.config.get("embedding", {}).get("cache_folder", "/tmp/rag-models-cache")
-            self.cross_encoder = CrossEncoder(self.model_name, cache_folder=cache_folder)
+            self.cross_encoder = CrossEncoder(self.model_name, cache_folder=cache_folder, activation_fn=Sigmoid())
 
         self.model_last_used = datetime.now()
         return self.cross_encoder
