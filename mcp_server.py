@@ -8,7 +8,7 @@ It implements a search tool that allows querying documents indexed in Qdrant.
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -37,9 +37,9 @@ class RAGSearchResult(BaseModel):
     score: float = Field(description="Similarity score (0-1, higher is better)")
     chunk_index: int = Field(description="Index of the chunk within the document")
     is_deleted: bool = Field(description="Whether the source file has been deleted")
-    deletion_timestamp: Optional[str] = Field(default=None, description="When the file was deleted, if applicable")
-    rerank_score: Optional[float] = Field(default=None, description="Re-ranking score if re-ranker is enabled")
-    original_score: Optional[float] = Field(default=None, description="Original embedding similarity score before re-ranking")
+    deletion_timestamp: str | None = Field(default=None, description="When the file was deleted, if applicable")
+    rerank_score: float | None = Field(default=None, description="Re-ranking score if re-ranker is enabled")
+    original_score: float | None = Field(default=None, description="Original embedding similarity score before re-ranking")
 
 
 class RAGSearchResponse(BaseModel):
@@ -48,7 +48,7 @@ class RAGSearchResponse(BaseModel):
     results: List[RAGSearchResult] = Field(description="List of unique matching document chunks (deduplicated)")
     query: str = Field(description="The original search query")
     total_results: int = Field(description="Number of unique results returned")
-    filtered_by_pattern: Optional[str] = Field(default=None, description="Glob pattern used for filtering, if any")
+    filtered_by_pattern: str | None = Field(default=None, description="Glob pattern used for filtering, if any")
 
 
 @asynccontextmanager
@@ -115,7 +115,7 @@ mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
 
 @mcp.tool()
 def rag_search(
-    query: str, number_docs: int = 10, glob_pattern: Optional[str] = None, score_threshold: float = 0.0
+    query: str, number_docs: int = 10, glob_pattern: str = "", score_threshold: float = 0.0
 ) -> RAGSearchResponse:
     """
     Search for relevant documents in the RAG database.
@@ -131,7 +131,8 @@ def rag_search(
     Args:
         query: The search string used to find relevant documents
         number_docs: The maximum number of documents to return (default: 10)
-        glob_pattern: Optional glob pattern to filter results by file path (case insensitive)
+        glob_pattern: An optional glob pattern to filter results by file path (case insensitive)
+                      Left empty by default means no filtering by glob pattern.
                       Examples: "*.pdf", "*/specific_dir/*", "*report*"
                       Use the `rag_info` tool to understand which directories are available
                       and their content types for targeted searches if you want to limit the search scope
@@ -145,7 +146,8 @@ def rag_search(
     ctx = mcp.get_context()
     embedding_manager = ctx.request_context.lifespan_context["embedding_manager"]
     logger = ctx.request_context.lifespan_context["logger"]
-
+    if glob_pattern == "":
+        glob_pattern = None
     try:
         logger.info(
             f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern}, threshold: {score_threshold})"
@@ -348,7 +350,7 @@ def summarize_documents_about(topic: str, file_pattern: str = None) -> str:
 
     Args:
         topic: The subject to summarize (e.g., "quarterly financial performance", "project status updates")
-        file_pattern: Optional glob pattern to filter specific file types or locations
+        file_pattern: An optional glob pattern to filter specific file types or locations
     """
     pattern_instruction = f"\nUse glob pattern: {file_pattern}" if file_pattern else ""
 
@@ -377,7 +379,7 @@ def find_emails_about(subject_or_content: str, date_range: str = None) -> str:
 
     Args:
         subject_or_content: What to search for in emails (subject line or content)
-        date_range: Optional date range (e.g., "last month", "2024", "January 2025")
+        date_range: An optional date range (e.g., "last month", "2024", "January 2025")
     """
     date_instruction = f" from {date_range}" if date_range else ""
 

@@ -12,7 +12,7 @@ A Python tool that monitors directories for file changes and automatically index
 - **Semantic Directory Understanding**: Configure semantic descriptions for directories to help AI assistants understand content types
 - **Chunking**: Intelligently splits large documents into smaller chunks
 - **Configurable**: YAML-based configuration for all settings
-- **Search CLI**: Comprehensive command-line tool for searching and managing documents
+- **Search CLI**: Comprehensive command-line tool for searching and managing documents with case-sensitive glob pattern support (file extensions are case-insensitive)
 - **MCP Server**: Model Context Protocol server for integration with AI assistants with intelligent directory targeting
 
 ## Installation
@@ -383,12 +383,17 @@ rag-search --query "machine learning algorithms"
 # Find similar documents
 rag-search --example ~/Documents/research_paper.pdf
 
-# Search by file pattern
+# Search by file pattern (case-sensitive, except file extensions)
 rag-search --glob "*.pdf" --start-date "2024-01-01"
 
 # Delete documents matching a pattern
 rag-search --glob "*/temp/*" --delete --dry-run
 ```
+
+**Note on Glob Pattern Matching:**
+- Glob patterns are **case-sensitive** for directory and file names (e.g., `*/Documents/*` won't match `*/documents/*`)
+- File extensions are **case-insensitive** (e.g., `*.PDF` matches both `.pdf` and `.PDF` files)
+- This applies to both the CLI tools and the MCP server
 
 For detailed usage examples, see [RAG_SEARCH_CLI.md](RAG_SEARCH_CLI.md).
 
@@ -501,8 +506,9 @@ Searches for relevant documents in the RAG database using semantic similarity.
 **Parameters:**
 - `query` (required): The search string used to find relevant documents
 - `number_docs` (optional, default: 10): Number of documents to return
-- `glob_pattern` (optional): Glob pattern to filter results by file path (case insensitive)
+- `glob_pattern` (optional): Glob pattern to filter results by file path (case-sensitive, except file extensions are case-insensitive)
   - Examples: `"*.pdf"`, `"*/specific_dir/*"`, `"*report*"`
+  - File extensions like `*.PDF` and `*.pdf` are treated the same, but directory/file names are case-sensitive
   - Use the `rag-directories://semantic` resource to understand which directories are available
 - `score_threshold` (optional, default: 0.0): Minimum similarity score for results (0.0-1.0)
 
@@ -540,8 +546,11 @@ result = rag_search("machine learning")
 # Get pattern suggestions for email search
 suggestions = suggest_search_patterns("email communication")
 
-# Search using suggested patterns
+# Search using suggested patterns (note: case-sensitive directory names)
 result = rag_search("project update", glob_pattern="*/Emails/*")
+
+# Search with case-insensitive file extensions
+result = rag_search("reports", glob_pattern="*.PDF")  # matches both .pdf and .PDF
 
 # Index a specific file
 scan_result = scan_file("/path/to/document.pdf")

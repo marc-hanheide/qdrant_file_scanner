@@ -440,36 +440,39 @@ class EmbeddingManager:
         Convert glob pattern to Qdrant filter conditions.
 
         This method handles common glob patterns and converts them to efficient Qdrant filters:
-        - *.ext -> files ending with .ext
-        - *keyword* -> files containing keyword
-        - prefix* -> files starting with prefix
+        - *.ext -> files ending with .ext (case-sensitive)
+        - *keyword* -> files containing keyword (case-sensitive)
+        - prefix* -> files starting with prefix (case-sensitive)
         - Complex patterns fall back to post-processing
         """
         if not glob_pattern:
             return []
 
         filter_conditions = []
-        pattern_lower = glob_pattern.lower()
 
         try:
             # Handle file extension patterns like "*.pdf", "*.txt"
-            if pattern_lower.startswith("*.") and "*" not in pattern_lower[2:]:
-                extension = pattern_lower[1:]  # Include the dot
+            if glob_pattern.startswith("*.") and "*" not in glob_pattern[2:]:
+                extension = glob_pattern[1:]  # Include the dot
                 # Use MatchText to find files ending with the extension
                 if MatchText is not None:
-                    filter_conditions.append(FieldCondition(key="file_path", match=MatchText(text=extension)))
+                    caseinsensitive_filter = Filter(should=[
+                        FieldCondition(key="file_path", match=MatchText(text=extension.lower())),
+                        FieldCondition(key="file_path", match=MatchText(text=extension.upper()))
+                    ])
+                    filter_conditions.append(caseinsensitive_filter)
                 return filter_conditions
 
-            # Handle simple prefix patterns like "report*"
-            elif pattern_lower.endswith("*") and "*" not in pattern_lower[:-1]:
-                prefix = pattern_lower[:-1]
+            # Handle simple prefix patterns like "report*" (case-sensitive)
+            elif glob_pattern.endswith("*") and "*" not in glob_pattern[:-1]:
+                prefix = glob_pattern[:-1]
                 if MatchText is not None:
                     filter_conditions.append(FieldCondition(key="file_path", match=MatchText(text=prefix)))
                 return filter_conditions
 
-            # Handle simple contains patterns like "*keyword*"
-            elif pattern_lower.startswith("*") and pattern_lower.endswith("*") and pattern_lower.count("*") == 2:
-                keyword = pattern_lower[1:-1]
+            # Handle simple contains patterns like "*keyword*" (case-sensitive)
+            elif glob_pattern.startswith("*") and glob_pattern.endswith("*") and glob_pattern.count("*") == 2:
+                keyword = glob_pattern[1:-1]
                 if keyword and MatchText is not None:
                     filter_conditions.append(FieldCondition(key="file_path", match=MatchText(text=keyword)))
                 return filter_conditions
@@ -568,16 +571,19 @@ class EmbeddingManager:
         """
         Check if a file path matches the given glob pattern.
         This is used for complex patterns that can't be handled by Qdrant filters.
+        Uses case-sensitive matching.
         """
         if not file_path or not glob_pattern:
             return True
 
-        # Case insensitive matching
-        file_path_lower = file_path.lower()
-        glob_pattern_lower = glob_pattern.lower()
-
-        # Use fnmatch for the actual pattern matching
-        return fnmatch.fnmatch(file_path_lower, glob_pattern_lower)
+        # Special handling for file extension patterns to make them case-insensitive
+        if glob_pattern.startswith("*.") and "*" not in glob_pattern[2:]:
+            # This is a simple file extension pattern like "*.pdf"
+            extension = glob_pattern[1:]  # Remove the * but keep the dot
+            return file_path.lower().endswith(extension.lower())
+        
+        # For other patterns, use case-sensitive matching
+        return fnmatch.fnmatch(file_path, glob_pattern)
 
     def count_documents(self) -> int:
         """Count total documents in the collection"""
