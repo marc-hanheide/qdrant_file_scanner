@@ -87,7 +87,7 @@ class EmbeddingManager:
 
         # Initialize re-ranker
         self.reranker = ReRanker(config)
-        
+
         if not slim_mode:
             self.logger.info("Hash retrieval will be done on-demand with local caching")
             # Ensure payload index exists for efficient file_path queries
@@ -557,7 +557,7 @@ class EmbeddingManager:
 
             # Apply re-ranking if enabled
             final_results = self.reranker.rerank_results(query, results, limit)
-            
+
             return final_results
 
         except Exception as e:
