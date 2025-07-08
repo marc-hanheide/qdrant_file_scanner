@@ -110,7 +110,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
 
 # Create MCP server
-mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
+mcp = FastMCP("rag_server", lifespan=app_lifespan)
 
 
 @mcp.tool()
