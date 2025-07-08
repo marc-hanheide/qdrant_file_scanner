@@ -6,6 +6,7 @@ import logging
 import uuid
 import fnmatch
 import threading
+import time
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from tqdm import tqdm
@@ -17,7 +18,7 @@ except ImportError:
 
 try:
     from qdrant_client import QdrantClient
-    from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchText
+    from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchText, PayloadSchemaType
 except ImportError:
     QdrantClient = None
     Distance = None
@@ -27,6 +28,7 @@ except ImportError:
     FieldCondition = None
     MatchValue = None
     MatchText = None
+    PayloadSchemaType = None
 
 # from ..memory_utils import ModelManager
 
@@ -67,12 +69,15 @@ class EmbeddingManager:
         # Ensure collection exists
         self._ensure_collection_exists()
 
-        # File tracking for change detection
-        self.file_hashes = {}
+        # File tracking for change detection with local caching
+        self.file_hashes = {}  # Local cache: {file_path: {'hash': hash_value, 'timestamp': time}}
+        self.hash_cache_ttl = config.get("memory", {}).get("hash_cache_ttl_seconds", 300)  # 5 minutes default
+        self.hash_cache_lock = threading.Lock()  # Thread safety for cache operations
+        
         if not slim_mode:
-            self.logger.info("Loading existing file hashes from Qdrant")
-            # Load existing file hashes from Qdrant metadata
-            self._load_file_hashes()
+            self.logger.info("Hash retrieval will be done on-demand with local caching")
+            # Ensure payload index exists for efficient file_path queries
+            self._ensure_payload_index()
 
     def _ensure_collection_exists(self):
         """Ensure the Qdrant collection exists"""
@@ -93,77 +98,74 @@ class EmbeddingManager:
             self.logger.error(f"Error ensuring collection exists: {str(e)}")
             raise
 
-    def _load_file_hashes(self):
-        """Load existing file hashes from Qdrant metadata using pagination"""
+    def _ensure_payload_index(self):
+        """Ensure payload index exists on file_path for efficient queries"""
         try:
-            self.logger.info("Loading existing file hashes from Qdrant")
-
-            # Use pagination to avoid loading all points at once
-            offset = None
-            batch_size = self.config.get("memory", {}).get("hash_loading_batch_size", 1000)  # Use config value with default
-            total_loaded = 0
-
-            # First, get total count for progress bar
-            try:
-                collection_info = self.client.get_collection(self.collection_name)
-                total_points = collection_info.points_count
-            except Exception:
-                total_points = None
-
-            # Initialize progress bar
-            try:
-                pbar = tqdm(total=total_points, desc="Loading file hashes", unit="hashes") if total_points else None
-            except ImportError:
-                pbar = None
-                self.logger.info("tqdm not available, progress bar disabled")
-
-            while True:
-                scroll_result = self.client.scroll(
-                    collection_name=self.collection_name,
-                    limit=batch_size,
-                    offset=offset,
-                    with_payload=["file_path", "file_hash"],  # Only load needed fields
-                )
-
-                points, next_offset = scroll_result
-
-                if not points:
-                    break
-
-                # Process batch and extract unique file hashes
-                for point in points:
-                    if "file_path" in point.payload and "file_hash" in point.payload:
-                        self.file_hashes[point.payload["file_path"]] = point.payload["file_hash"]
-
-                total_loaded += len(points)
-
-                # Update progress bar
-                if pbar:
-                    pbar.update(len(points))
-
-                # Break if no more results
-                if next_offset is None:
-                    break
-
-                offset = next_offset
-
-                # Optional: Yield control to prevent blocking and log progress without tqdm
-                if total_loaded % 5000 == 0:
-                    if not pbar:  # Only log if no progress bar
-                        self.logger.info(f"Loaded {total_loaded} file hashes so far...")
-
-            # Close progress bar
-            if pbar:
-                pbar.close()
-
-            self.logger.info(f"Loaded {len(self.file_hashes)} unique file hashes from {total_loaded} points")
-
+            if PayloadSchemaType is None:
+                self.logger.warning("PayloadSchemaType not available, skipping index creation")
+                return
+                
+            # Create payload index on file_path field for efficient querying
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="file_path",
+                field_schema=PayloadSchemaType.KEYWORD,
+                wait=True
+            )
+            self.logger.info("Ensured payload index exists on file_path field")
         except Exception as e:
-            self.logger.error(f"Error loading file hashes: {str(e)}")
+            # Index might already exist, which is fine
+            self.logger.debug(f"Index creation info: {str(e)}")
+
+    def _get_file_hash_from_qdrant(self, file_path: str) -> Optional[str]:
+        """Query Qdrant for the file hash of a specific file path"""
+        try:
+            # Query Qdrant for any point with this file_path
+            search_result = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(must=[FieldCondition(key="file_path", match=MatchValue(value=file_path))]),
+                limit=1,  # We only need one result to get the hash
+                with_payload=["file_hash"],  # Only load the hash field
+            )
+            
+            points, _ = search_result
+            if points and len(points) > 0:
+                return points[0].payload.get("file_hash")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error querying file hash for {file_path}: {str(e)}")
+            return None
+
+    def _is_cache_entry_valid(self, cache_entry: Dict) -> bool:
+        """Check if a cache entry is still valid based on TTL"""
+        if not cache_entry or 'timestamp' not in cache_entry:
+            return False
+        return time.time() - cache_entry['timestamp'] < self.hash_cache_ttl
+
+    def _get_cached_file_hash(self, file_path: str) -> Optional[str]:
+        """Get file hash from cache if valid, otherwise query Qdrant and cache result"""
+        with self.hash_cache_lock:
+            # Check if we have a valid cached entry
+            cache_entry = self.file_hashes.get(file_path)
+            if cache_entry and self._is_cache_entry_valid(cache_entry):
+                return cache_entry['hash']
+            
+            # Cache miss or expired - query Qdrant
+            hash_value = self._get_file_hash_from_qdrant(file_path)
+            
+            # Update cache with new value (even if None)
+            self.file_hashes[file_path] = {
+                'hash': hash_value,
+                'timestamp': time.time()
+            }
+            
+            return hash_value
 
     def is_file_unchanged(self, file_path: str, current_hash: str) -> bool:
-        """Check if file has not changed since last indexing"""
-        return self.file_hashes.get(file_path) == current_hash
+        """Check if file has not changed since last indexing using on-demand querying with cache"""
+        stored_hash = self._get_cached_file_hash(file_path)
+        return stored_hash == current_hash
 
     def get_file_hash(self, file_path: str) -> str:
         """Get MD5 hash of file for change detection using streaming"""
@@ -351,7 +353,7 @@ class EmbeddingManager:
                     gc.collect()
 
             # Update file hash cache
-            self.file_hashes[file_path] = file_hash
+            self._update_file_hash_cache(file_path, file_hash)
 
             self.logger.info(f"Indexed {total_indexed} chunks from {file_path}")
 
@@ -381,7 +383,7 @@ class EmbeddingManager:
                 self.logger.info(f"Deleted {len(point_ids)} chunks for {file_path}")
 
             # Remove from file hash cache
-            self.file_hashes.pop(file_path, None)
+            self._remove_from_hash_cache(file_path)
 
         except Exception as e:
             self.logger.error(f"Error deleting document {file_path}: {str(e)}")
@@ -420,7 +422,7 @@ class EmbeddingManager:
                 self.logger.info(f"Marked {len(points_to_update)} chunks as deleted for {file_path}")
 
             # Remove from file hash cache (so it will be reprocessed if the file reappears)
-            self.file_hashes.pop(file_path, None)
+            self._remove_from_hash_cache(file_path)
 
         except Exception as e:
             self.logger.error(f"Error marking document as deleted {file_path}: {str(e)}")
@@ -701,7 +703,8 @@ class EmbeddingManager:
                 return "[TEXT_ENCODING_ERROR]"
 
     def check_and_unload_idle_model(self):
-        """Check if model has been idle and unload it if necessary"""
+        """Check if model has been idle and unload it if necessary, also cleanup expired cache"""
+        model_unloaded = False
         with self.model_lock:
             if (
                 self.embedding_model is not None
@@ -710,17 +713,41 @@ class EmbeddingManager:
             ):
                 self.logger.info(f"Unloading idle embedding model after {self.unload_after_minutes} minutes")
                 self.unload_embedding_model()
-                return True
-        return False
+                model_unloaded = True
+        
+        # Also cleanup expired hash cache entries
+        self._cleanup_expired_cache_entries()
+        
+        return model_unloaded
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get memory usage statistics"""
+        hash_cache_stats = self.get_hash_cache_stats()
         return {
-            "file_hashes_count": len(self.file_hashes),
+            "file_hashes_cache_entries": hash_cache_stats["total_entries"],
+            "file_hashes_valid_entries": hash_cache_stats["valid_entries"],
+            "file_hashes_expired_entries": hash_cache_stats["expired_entries"],
             "embedding_model_loaded": self.embedding_model is not None,
             "model_last_used": self.model_last_used.isoformat() if self.model_last_used else None,
             "operation_counter": self.operation_counter,
+            "hash_cache_ttl_seconds": self.hash_cache_ttl,
         }
+
+    def get_hash_cache_stats(self) -> Dict[str, Any]:
+        """Get statistics about the hash cache for monitoring"""
+        with self.hash_cache_lock:
+            total_entries = len(self.file_hashes)
+            current_time = time.time()
+            valid_entries = sum(1 for entry in self.file_hashes.values() if self._is_cache_entry_valid(entry))
+            expired_entries = total_entries - valid_entries
+            
+            return {
+                "total_entries": total_entries,
+                "valid_entries": valid_entries,
+                "expired_entries": expired_entries,
+                "cache_ttl_seconds": self.hash_cache_ttl,
+                "hit_rate_info": "Hash cache provides on-demand querying with local caching"
+            }
 
     def _debug_text_content(self, text_content: str, file_path: str) -> Dict[str, Any]:
         """Debug helper to analyze text content that might cause embedding issues"""
@@ -749,3 +776,31 @@ class EmbeddingManager:
         debug_info["special_chars"] = list(unusual_chars)[:10]  # Limit to first 10
 
         return debug_info
+
+    def _update_file_hash_cache(self, file_path: str, file_hash: Optional[str]):
+        """Update the file hash cache with thread safety"""
+        with self.hash_cache_lock:
+            self.file_hashes[file_path] = {
+                'hash': file_hash,
+                'timestamp': time.time()
+            }
+
+    def _remove_from_hash_cache(self, file_path: str):
+        """Remove a file path from the hash cache with thread safety"""
+        with self.hash_cache_lock:
+            self.file_hashes.pop(file_path, None)
+
+    def _cleanup_expired_cache_entries(self):
+        """Clean up expired cache entries to prevent memory leaks"""
+        with self.hash_cache_lock:
+            current_time = time.time()
+            expired_keys = [
+                file_path for file_path, cache_entry in self.file_hashes.items()
+                if not self._is_cache_entry_valid(cache_entry)
+            ]
+            
+            for key in expired_keys:
+                del self.file_hashes[key]
+                
+            if expired_keys:
+                self.logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
