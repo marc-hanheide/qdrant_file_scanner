@@ -42,6 +42,7 @@ class TextExtractor:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.fallback_text = "*** document text cannot be extracted ***"  # Default fallback text for extraction failures
 
     def extract_text(self, file_path: str) -> str:
         """Extract text from file based on its type"""
@@ -49,25 +50,29 @@ class TextExtractor:
         extension = path.suffix.lower()
 
         try:
+            result = ""
             if extension == ".pdf":
-                return self.extract_pdf(file_path)
+                result = self.extract_pdf(file_path)
             elif extension == ".docx":
-                return self.extract_docx(file_path)
+                result = self.extract_docx(file_path)
             elif extension == ".pptx":
-                return self.extract_pptx(file_path)
+                result = self.extract_pptx(file_path)
             elif extension == ".xlsx":
-                return self.extract_xlsx(file_path)
+                result = self.extract_xlsx(file_path)
             elif extension in [".html", ".htm"]:
-                return self.extract_html(file_path)
+                result = self.extract_html(file_path)
             elif extension in [".txt", ".md", ".rtf"]:
-                return self.extract_text_file(file_path)
+                result = self.extract_text_file(file_path)
             else:
                 # Try as text file
-                return self.extract_text_file(file_path)
+                result = self.extract_text_file(file_path)
+            if not result.strip():
+                self.logger.warning(f"No text extracted from {file_path}, using fallback text")
+                return self.fallback_text
 
         except Exception as e:
-            self.logger.error(f"Error extracting text from {file_path}: {str(e)}")
-            return ""
+            self.logger.warning(f"Error extracting text from {file_path}: {str(e)}")
+            return self.fallback_text
 
     def extract_pdf(self, file_path: str) -> str:
         """Extract text from PDF file"""
