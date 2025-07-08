@@ -155,13 +155,13 @@ class FileMonitorHandler(FileSystemEventHandler):
         if not event.is_directory and self.should_process_file(event.src_path):
             self.logger.info(f"New file detected: {event.src_path}")
             print(f"New file detected: {event.src_path}", file=sys.stderr)
-            self.process_file(event.src_path)
+            self.process_file(event.src_path, force_reindex=True)
 
     def on_modified(self, event):
         if not event.is_directory and self.should_process_file(event.src_path):
             self.logger.info(f"File modified: {event.src_path}")
             print(f"File modified: {event.src_path}", file=sys.stderr)
-            self.process_file(event.src_path)
+            self.process_file(event.src_path, force_reindex=True)
 
     def on_deleted(self, event):
         if not event.is_directory:
@@ -182,22 +182,43 @@ class FileMonitorHandler(FileSystemEventHandler):
                 self.embedding_manager.mark_document_as_deleted(event.src_path)
 
             if self.should_process_file(event.dest_path):
-                self.process_file(event.dest_path)
+                self.process_file(event.dest_path, force_reindex=True)
 
-    def process_file(self, file_path: str):
+    def process_file(self, file_path: str, force_reindex: bool = False):
         """Process a single file"""
         try:
-            # Check if file has changed
+            # Check if directory is configured as static files (skip hash checks for performance)
+            static_files = self.directory_config.get("static_files", False)
+
+            # Check minimum file size (skip very small files)
+            file_size = os.path.getsize(file_path)
+            if file_size < 10:
+                self.logger.info(f"File {file_path} is too small ({file_size} bytes), skipping")
+                return
+
+            current_hash = ""
+            if not force_reindex and static_files:
+                # For static files, assume file hasn't changed and check if already indexed
+                stored_hash = self.embedding_manager._get_cached_file_hash(file_path)
+                if stored_hash is not None:
+                    self.logger.info(f"File {file_path} in static directory already indexed, skipping hash check")
+                    return
+
+                # File not indexed yet, use empty hash for indexing
+                self.logger.info(f"File {file_path} in static directory needs initial indexing (no hash check)")
+
+            # Normal file processing with hash check
             current_hash = self.get_file_hash(file_path)
-            if self.embedding_manager.is_file_unchanged(file_path, current_hash):
+            if self.embedding_manager.is_file_unchanged(file_path, current_hash) and not force_reindex:
                 self.logger.info(f"File {file_path} has not changed, skipping indexing")
                 return
 
             self.logger.info(f"Document {file_path} needs indexing, extract text")
+
             # Extract text
             text_content = self.text_extractor.extract_text(file_path)
             if not text_content.strip():
-                self.logger.warning(f"No text extracted from {file_path}")
+                self.logger.error(f"No text extracted from {file_path}")
                 return
 
             # Index the document - this now raises exceptions on failure
@@ -389,7 +410,13 @@ class FileMonitor:
             else:
                 size_info = f"max_size={self.config['processing']['max_file_size_mb']}MB(global)"
 
-            self.logger.info(f"Monitoring directory: {directory} (extensions: {sorted(effective_extensions)}, {size_info})")
+            static_info = ""
+            if directory_config.get("static_files", False):
+                static_info = ", static_files=true(skip hash checks)"
+
+            self.logger.info(
+                f"Monitoring directory: {directory} (extensions: {sorted(effective_extensions)}, {size_info}{static_info})"
+            )
 
         if not self.observers:
             self.logger.error("No valid directories to monitor")
@@ -423,7 +450,10 @@ class FileMonitor:
                 "Using legacy directory configuration format. Consider upgrading to the new per-directory format."
             )
             # Convert to new format with empty configurations
-            return {directory: {"ignore_extensions": [], "max_filesize": 0} for directory in directories_config}
+            return {
+                directory: {"ignore_extensions": [], "max_filesize": 0, "static_files": False}
+                for directory in directories_config
+            }
 
         # Handle new format (dictionary with per-directory settings)
         if isinstance(directories_config, dict):
@@ -435,6 +465,10 @@ class FileMonitor:
                     config["max_filesize"] = 0  # 0 means use global default
                 if "ignore_extensions" not in config:
                     config["ignore_extensions"] = []
+                if "static_files" not in config:
+                    config["static_files"] = False  # False means normal hash checking
+                # Update the config in place
+                directories_config[directory] = config
             return directories_config
 
         self.logger.error("Invalid directories configuration format")
@@ -476,7 +510,7 @@ class FileMonitor:
         delete_embeddings_on_deletion = self.config["processing"]["delete_embeddings_on_file_deletion"]
 
         # Use default configuration for ad-hoc scanning
-        default_config = {"ignore_extensions": [], "max_filesize": 0}
+        default_config = {"ignore_extensions": [], "max_filesize": 0, "static_files": False}
 
         # Create a single handler for all ad-hoc items
         handler = FileMonitorHandler(

@@ -31,7 +31,6 @@ def create_test_config(temp_dir=None):
         },
         "memory": {
             "chunk_batch_size": 10,
-            "hash_loading_batch_size": 100,
             "unload_model_after_idle_minutes": 30,
             "force_gc_after_operations": 100,
         },

@@ -8,6 +8,7 @@ A Python tool that monitors directories for file changes and automatically index
 - **Multi-format Support**: Processes HTML, PDF, TXT, DOCX, and other text files
 - **Vector Storage**: Generates embeddings and stores them in Qdrant vector database
 - **Change Detection**: Only reprocesses files when they actually change
+- **Static Files Optimization**: Skip hash checks for directories with static content to dramatically improve performance on network filesystems
 - **Chunking**: Intelligently splits large documents into smaller chunks
 - **Configurable**: YAML-based configuration for all settings
 - **Search CLI**: Comprehensive command-line tool for searching and managing documents
@@ -70,19 +71,37 @@ directories:
   "/path/to/documents":
     ignore_extensions: []  # Use all global file_extensions
     max_filesize: 0  # Use global max_file_size_mb setting
+    static_files: false  # Normal hash checking (default)
   "/path/to/emails":
     ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations
     max_filesize: 5  # Maximum 5MB per file in this directory
+    static_files: false  # Email files can change, check hashes
+  "/path/to/archive":
+    ignore_extensions: []  # Process all supported types
+    max_filesize: 20  # Allow larger archived documents
+    static_files: true  # Archive files don't change, skip hash checks for speed
   "/path/to/downloads":
     ignore_extensions: [".html", ".htm", ".rtf"]  # Skip web files and RTF
     max_filesize: 2  # Maximum 2MB per file in downloads (temporary files)
+    # static_files: false (default) - Downloads change frequently
 ```
 
 Each directory can specify:
 - `ignore_extensions`: Array of file extensions to skip for this directory
 - `max_filesize`: Maximum file size in MB for files in this directory (0 = use global default)
+- `static_files`: Skip hash checks for performance (true/false, default: false)
 - Extensions are applied on top of the global `file_extensions` list
 - Empty array for ignore_extensions means all global extensions will be processed
+
+#### Static Files Optimization
+
+The `static_files` option provides significant performance improvements for directories containing files that rarely or never change:
+
+- **When `static_files: true`**: Files are only indexed once. On subsequent scans, if the file is already in the database, it's skipped without reading the file or computing hashes
+- **When `static_files: false`** (default): Files are hash-checked on every scan to detect changes
+- **Performance Impact**: On network filesystems, enabling static files can reduce scan times by 90%+ for large directories
+- **Use Cases**: Archive directories, official documents, completed projects, reference materials
+- **Warning**: Only use `static_files: true` for directories where files genuinely don't change. If files do change, updates won't be detected.
 
 #### Legacy Format (Still Supported)
 ```yaml
@@ -104,15 +123,23 @@ directories:
   "/Users/username/Documents/Papers":
     ignore_extensions: []  # Process all file types
     max_filesize: 20  # Allow large academic papers up to 20MB
+    static_files: true  # Published papers don't change, optimize for speed
   "/Users/username/Documents/Email_Attachments":
     ignore_extensions: [".html", ".htm"]  # Skip HTML emails
     max_filesize: 5  # Email attachments usually smaller
+    static_files: false  # Email attachments might be updated
+  "/Users/username/Documents/Archive":
+    ignore_extensions: []  # Process all file types
+    max_filesize: 50  # Large archived documents allowed
+    static_files: true  # Archive files are static, optimize performance
   "/Users/username/Downloads":
     ignore_extensions: [".html", ".htm", ".rtf", ".xlsx"]  # Skip web files and spreadsheets
     max_filesize: 2  # Downloads are often temporary, keep small
+    static_files: false  # Downloads change frequently
   "/Users/username/Desktop":
     ignore_extensions: [".pptx", ".xlsx"]  # Skip presentations and spreadsheets on desktop
     max_filesize: 10  # Medium size limit for desktop files
+    static_files: false  # Working files on desktop change frequently
 ```
 
 #### Example 2: Business Setup

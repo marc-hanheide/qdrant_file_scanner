@@ -41,7 +41,6 @@ def sample_config():
         },
         "memory": {
             "chunk_batch_size": 10,
-            "hash_loading_batch_size": 100,
             "unload_model_after_idle_minutes": 30,
             "force_gc_after_operations": 100,
         },
@@ -178,6 +177,54 @@ class TestFileMonitor:
         except ImportError:
             pytest.skip("Required dependencies not available")
 
+    def test_static_files_configuration_parsing(self, sample_config):
+        """Test that static_files configuration is properly parsed and defaulted"""
+        try:
+            # Add static_files configuration to test config
+            test_config = sample_config.copy()
+            test_config["directories"] = {
+                "/test/static_dir": {"ignore_extensions": [], "max_filesize": 0, "static_files": True},
+                "/test/normal_dir": {"ignore_extensions": [], "max_filesize": 0, "static_files": False},
+                "/test/default_dir": {"ignore_extensions": [], "max_filesize": 0},  # No static_files specified
+            }
+
+            with patch("rag_file_monitor.file_monitor.EmbeddingManager"), patch("rag_file_monitor.file_monitor.TextExtractor"):
+                monitor = FileMonitor(test_config)
+                directories_config = monitor.get_directories_config()
+
+                # Check that static_files is properly set
+                assert directories_config["/test/static_dir"]["static_files"] is True
+                assert directories_config["/test/normal_dir"]["static_files"] is False
+                assert directories_config["/test/default_dir"]["static_files"] is False  # Should default to False
+
+        except ImportError:
+            pytest.skip("Required dependencies not available")
+
+    def test_static_files_legacy_format(self):
+        """Test that legacy directory format gets proper static_files defaults"""
+        legacy_config = {
+            "directories": ["/test/dir1", "/test/dir2"],
+            "file_extensions": [".txt", ".pdf"],
+            "processing": {"max_file_size_mb": 5, "exclude_patterns": []},
+            "qdrant": {"host": "localhost", "port": 6333, "collection_name": "test"},
+            "embedding": {"model_name": "test-model", "chunk_size": 512, "chunk_overlap": 100},
+            "memory": {"chunk_batch_size": 10},
+            "logging": {"level": "WARNING", "file": "test.log"},
+        }
+
+        try:
+            with patch("rag_file_monitor.file_monitor.EmbeddingManager"), patch("rag_file_monitor.file_monitor.TextExtractor"):
+                monitor = FileMonitor(legacy_config)
+                directories_config = monitor.get_directories_config()
+
+                # All directories should have static_files defaulting to False
+                for dir_path, dir_config in directories_config.items():
+                    assert "static_files" in dir_config
+                    assert dir_config["static_files"] is False
+
+        except ImportError:
+            pytest.skip("Required dependencies not available")
+
 
 class TestFileMonitorHandler:
     """Test cases for FileMonitorHandler class"""
@@ -240,6 +287,82 @@ class TestFileMonitorHandler:
         handler.directory_config = None
         effective = handler.get_effective_extensions_for_file("/test/dir/file.txt")
         assert effective == file_extensions
+
+    def test_static_files_processing(self):
+        """Test that static_files configuration affects processing behavior"""
+        mock_embedding_manager = Mock()
+        mock_text_extractor = Mock()
+
+        # Configure mock to simulate file already indexed
+        mock_embedding_manager._get_cached_file_hash.return_value = "existing_hash"
+        mock_text_extractor.extract_text.return_value = "test content"
+
+        # Test with static_files = True
+        static_config = {"ignore_extensions": [], "max_filesize": 0, "static_files": True}
+        handler = FileMonitorHandler(
+            embedding_manager=mock_embedding_manager,
+            text_extractor=mock_text_extractor,
+            file_extensions={".txt"},
+            exclude_patterns=[],
+            max_file_size=5000000,
+            delete_embeddings_on_deletion=False,
+            directory_path="/test/static_dir",
+            directory_config=static_config,
+        )
+
+        # Mock get_file_hash to ensure it's not called in static mode
+        # Also mock os.path.getsize since we're using fake file paths
+        with patch.object(handler, "get_file_hash") as mock_get_hash, patch(
+            "os.path.getsize", return_value=100
+        ) as mock_getsize:
+            handler.process_file("/test/static_dir/file.txt")
+
+            # get_file_hash should NOT be called for static files
+            mock_get_hash.assert_not_called()
+
+            # Should check cached hash instead
+            mock_embedding_manager._get_cached_file_hash.assert_called_with("/test/static_dir/file.txt")
+
+            # Should not proceed to indexing since file already exists
+            mock_text_extractor.extract_text.assert_not_called()
+
+    def test_normal_files_processing(self):
+        """Test that normal files still do hash checking"""
+        mock_embedding_manager = Mock()
+        mock_text_extractor = Mock()
+
+        # Configure mock
+        mock_embedding_manager.is_file_unchanged.return_value = True  # File unchanged
+
+        # Test with static_files = False (normal mode)
+        normal_config = {"ignore_extensions": [], "max_filesize": 0, "static_files": False}
+        handler = FileMonitorHandler(
+            embedding_manager=mock_embedding_manager,
+            text_extractor=mock_text_extractor,
+            file_extensions={".txt"},
+            exclude_patterns=[],
+            max_file_size=5000000,
+            delete_embeddings_on_deletion=False,
+            directory_path="/test/normal_dir",
+            directory_config=normal_config,
+        )
+
+        # Mock get_file_hash to return a hash and mock os.path.getsize
+        with patch.object(handler, "get_file_hash", return_value="file_hash") as mock_get_hash, patch(
+            "os.path.getsize", return_value=100
+        ) as mock_getsize:
+            handler.process_file("/test/normal_dir/file.txt")
+
+            # get_file_hash SHOULD be called for normal files
+            mock_get_hash.assert_called_once_with("/test/normal_dir/file.txt")
+
+            # Should check if file is unchanged
+            mock_embedding_manager.is_file_unchanged.assert_called_with("/test/normal_dir/file.txt", "file_hash")
+
+            # Should not extract text since file is unchanged
+            mock_text_extractor.extract_text.assert_not_called()
+
+    # ...existing code...
 
 
 def test_config_validation():

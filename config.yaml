@@ -1,21 +1,37 @@
 directories:
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Microsoft Teams Chat Files":
+    static_files: true  # Messages here are just archived, never change
     max_filesize: 10
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Attachments":
+    static_files: true  # Attachements here are just archived, never change
     max_filesize: 10  # Maximum file size in MB (0 = use global default)
-  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails":
-    ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations in emails
-    max_filesize: 2  # Smaller limit for emails
-  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Reviews":
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Reviews/ral":
+    static_files: true  # Assume files don't change, skip hash checks for performance
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/letters":
+    static_files: true  # Assume files don't change, skip hash checks for performance
   "/Users/mhanheide/Library/CloudStorage/OneDrive-SharedLibraries-UniversityofLincoln/UoL Academic Board - General/2024-25":
     ignore_extensions: []  # Use default file_extensions
     max_filesize: 15  # Larger limit for official documents
+    static_files: true  # Official documents are typically static, skip hash checks
   "/Users/mhanheide/Downloads":
     max_filesize: 50  # larger limit for local files
+    static_files: false  # Downloads can change frequently, always check hashes
   "/Users/mhanheide/Desktop":
     max_filesize: 50  # larger limit for local files
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails":
+    ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations in emails
+    static_files: true  # Emails here are just archived, never change
+    max_filesize: 2  # Smaller limit for emails
+    # static_files: false (default) - Desktop files can change, always check hashes
   # Add more directories as needed with their specific configurations
+  # 
+  # Directory Configuration Options:
+  # - max_filesize: Maximum file size in MB (0 = use global default)
+  # - ignore_extensions: List of file extensions to skip (overrides global file_extensions)
+  # - static_files: true/false - If true, assume files don't change and skip hash checks
+  #   This significantly speeds up reindexing on network filesystems but should only
+  #   be used for directories containing files that rarely or never change (like
+  #   archived documents, official records, etc.)
 
 # File extensions to process (global defaults)
 # Each directory can override these with ignore_extensions
@@ -62,12 +78,13 @@ processing:
 # Memory optimization settings
 memory:
   chunk_batch_size: 50  # Process document chunks in batches
-  hash_loading_batch_size: 20000  # Load file hashes in batches
+  hash_cache_ttl_seconds: 300  # Hash cache TTL in seconds (5 minutes default)
   unload_model_after_idle_minutes: 30  # Unload embedding model after idle time
   force_gc_after_operations: 100  # Force garbage collection after N operations
+  embedding_batch_size: 32  # Batch size for embedding generation
 
 # Logging
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  file: "rag_monitor.log"
+  level: "WARNING"  # DEBUG, INFO, WARNING, ERROR
+  file: "/tmp/rag_monitor.log"
   mcp_logfile: "/tmp/mcp_server.log"
