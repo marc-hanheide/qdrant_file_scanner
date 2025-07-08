@@ -124,11 +124,16 @@ def rag_search(
     to find the most relevant content chunks for a given query. Results are automatically
     deduplicated to ensure no duplicate chunks are returned.
 
+    Use the rag-directories://semantic resource to get complete information about
+    configured directories and their semantic content descriptions.
+
     Args:
         query: The search string used to find relevant documents
         number_docs: The maximum number of documents to return (default: 10)
         glob_pattern: Optional glob pattern to filter results by file path (case insensitive)
-                      Examples: "*.pdf", "*/emails/*", "*report*"
+                      Examples: "*.pdf", "*/specific_dir/*", "*report*"
+                      Use the rag-directories://semantic resource to understand which directories
+                      are available and their content types for targeted searches
         score_threshold: Minimum similarity score for results to be included (0.0-1.0, default: 0.0)
                          Higher values return only more relevant results, a value of 0.5 offers a good trade-off to start with
 
@@ -320,6 +325,11 @@ def find_files_about(topic: str) -> str:
     """
     return f"""I need to find files about "{topic}". Please use the rag_search tool to search for relevant documents.
 
+First, check the rag-directories://semantic resource to understand which directories are configured 
+and their semantic content. This will help you choose appropriate glob patterns for targeted searches.
+
+You can also use the suggest_search_patterns tool with the topic to get specific pattern recommendations.
+
 After finding the results:
 1. List the most relevant files with their paths
 2. If the files exist and are accessible, offer to open or read specific ones
@@ -346,10 +356,12 @@ def summarize_documents_about(topic: str, file_pattern: str = None) -> str:
     return f"""I need a comprehensive summary about "{topic}" from available documents.{pattern_instruction}
 
 Please follow this process:
-1. First, use rag_search to find relevant documents about "{topic}"
-2. Identify the most relevant and recent documents
-3. For key documents, read their full content to get complete context if that is required
-4. Synthesize the information into a structured summary covering:
+1. First, consult rag-directories://semantic resource to understand directory content types
+2. Use suggest_search_patterns tool to get recommendations for relevant directories
+3. Use rag_search to find relevant documents about "{topic}" with appropriate glob patterns
+4. Identify the most relevant and recent documents
+5. For key documents, read their full content to get complete context if required
+6. Synthesize the information into a structured summary covering:
    - Key findings or main points
    - Important dates and timelines
    - Relevant numbers, statistics, or metrics
@@ -363,30 +375,31 @@ Search query: {topic}"""
 def find_emails_about(subject_or_content: str, date_range: str = None) -> str:
     """Find specific emails based on subject or content.
 
-    This prompt helps locate emails which are stored as HTML files in OneDrive.
+    This prompt helps locate emails stored in configured directories.
     Use this when you need to find email communications about specific topics.
 
     Args:
         subject_or_content: What to search for in emails (subject line or content)
         date_range: Optional date range (e.g., "last month", "2024", "January 2025")
     """
-    email_pattern = "*/OneDrive-UniversityofLincoln/Emails/*/*.html"
     date_instruction = f" from {date_range}" if date_range else ""
 
     return f"""I need to find emails about "{subject_or_content}"{date_instruction}.
 
 Please search for emails using these steps:
-1. Use rag_search with glob_pattern="{email_pattern}" to find relevant emails
-2. Look for emails matching the subject or containing the specified content
-3. Present the results showing:
+1. First, check rag-directories://semantic resource to identify directories containing emails
+2. Look for directories with semantic content related to emails, correspondence, or messages  
+3. Use rag_search with appropriate glob patterns based on the email directories found
+4. Look for emails matching the subject or containing the specified content
+5. Present the results showing:
    - Email subject/title (from filename or content)
    - Date information (if available)
    - Sender/recipient information (if found in content)
    - Brief preview of relevant content
    - Full file path for reference
 
-Search in: /Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails
-File type: all stoared email files end in `.html`
+You can also use suggest_search_patterns tool to get specific recommendations for email-related directories.
+
 Search query: {subject_or_content}"""
 
 
@@ -428,12 +441,13 @@ Search Strategy: {search_strategy}
 
 Please help me find and organize information by:
 1. Using rag_search with appropriate keywords and patterns
-2. Identifying the most relevant documents
-3. Organizing results by relevance and type
-4. Providing actionable next steps or direct links where possible
+2. Consulting rag-directories://semantic resource to understand directory content types
+3. Using suggest_search_patterns tool to get targeted directory recommendations
+4. Identifying the most relevant documents
+5. Organizing results by relevance and type
+6. Providing actionable next steps or direct links where possible
 
-For emails, remember to use the pattern: */OneDrive-UniversityofLincoln/Emails/*/*.html
-For specific file types, use appropriate glob patterns
+Use the semantic directory information and pattern suggestions to target your searches effectively.
 
 Search query: {query}"""
 
@@ -522,6 +536,180 @@ def scan_file(file_path: str) -> Dict[str, Any]:
                 file_path_str if "file_path_str" in locals() else str(file_path) if "file_path" in locals() else "unknown"
             ),
         }
+
+
+@mcp.resource("rag-directories://semantic", title="Directory Semantic Information")
+def get_directory_semantics() -> str:
+    """Get semantic descriptions of all configured directories.
+
+    This resource helps LLMs understand what type of content is stored in each directory,
+    enabling better glob pattern selection for targeted searches.
+    """
+    ctx = mcp.get_context()
+    config = ctx.request_context.lifespan_context["config"]
+
+    directories = config.get("directories", {})
+    semantic_info = {}
+
+    for dir_path, dir_config in directories.items():
+        semantic_content = dir_config.get("semantic_content", "contains various documents")
+        semantic_info[dir_path] = {
+            "semantic_content": semantic_content,
+            "max_filesize": dir_config.get("max_filesize", config.get("processing", {}).get("max_file_size_mb", 5)),
+            "static_files": dir_config.get("static_files", False),
+            "ignore_extensions": dir_config.get("ignore_extensions", []),
+        }
+
+    # Create a formatted output that's easy for LLMs to understand
+    output = "Directory Semantic Information:\n\n"
+    for dir_path, info in semantic_info.items():
+        output += f"Path: {dir_path}\n"
+        output += f"Content: {info['semantic_content']}\n"
+        output += f"Max file size: {info['max_filesize']}MB\n"
+        output += f"Static files: {info['static_files']}\n"
+        if info["ignore_extensions"]:
+            output += f"Ignored extensions: {', '.join(info['ignore_extensions'])}\n"
+        output += "\n"
+
+    # Add helpful guidance for glob patterns
+    output += "Glob Pattern Examples:\n"
+    for dir_path, info in semantic_info.items():
+        # Extract directory name for pattern suggestion
+        dir_name = dir_path.split("/")[-1]
+        if dir_name:  # Make sure we have a valid directory name
+            output += f"- To search in '{info['semantic_content']}': */{dir_name}/*\n"
+
+    output += "\nGeneral pattern tips:\n"
+    output += "- Use wildcards (*) to match parts of paths\n"
+    output += "- Use file extensions like *.pdf, *.docx for specific file types\n"
+    output += "- Combine directory patterns with file extensions: */dirname/*.pdf\n"
+
+    return output
+
+
+def get_directory_semantic_content(config: Dict[str, Any], directory_path: str) -> str:
+    """
+    Get the semantic content description for a specific directory.
+
+    Args:
+        config: The configuration dictionary
+        directory_path: The directory path to look up
+
+    Returns:
+        The semantic content description, or default if not found
+    """
+    directories = config.get("directories", {})
+
+    # Try exact match first
+    if directory_path in directories:
+        return directories[directory_path].get("semantic_content", "contains various documents")
+
+    # Try partial match for subdirectories
+    for dir_path, dir_config in directories.items():
+        if directory_path.startswith(dir_path):
+            return dir_config.get("semantic_content", "contains various documents")
+
+    return "contains various documents"
+
+
+def get_semantic_suggestions_for_query(config: Dict[str, Any], query: str) -> List[str]:
+    """
+    Suggest relevant directory glob patterns based on a search query and semantic content.
+
+    Args:
+        config: The configuration dictionary
+        query: The search query
+
+    Returns:
+        List of suggested glob patterns
+    """
+    directories = config.get("directories", {})
+    suggestions = []
+
+    query_lower = query.lower()
+    query_words = set(query_lower.split())
+
+    for dir_path, dir_config in directories.items():
+        semantic_content = dir_config.get("semantic_content", "").lower()
+        semantic_words = set(semantic_content.split())
+
+        # Calculate word overlap between query and semantic content
+        word_overlap = len(query_words.intersection(semantic_words))
+
+        # Also check for partial word matches
+        partial_matches = 0
+        for query_word in query_words:
+            for semantic_word in semantic_words:
+                if len(query_word) >= 3 and query_word in semantic_word:
+                    partial_matches += 0.5
+                elif len(semantic_word) >= 3 and semantic_word in query_word:
+                    partial_matches += 0.5
+
+        # Suggest if there's reasonable semantic overlap
+        total_score = word_overlap + partial_matches
+        if total_score >= 1.0:  # At least one full word match or equivalent partial matches
+            dir_name = dir_path.split("/")[-1]
+            if dir_name:
+                suggestions.append(f"*/{dir_name}/*")
+
+    return list(set(suggestions))  # Remove duplicates
+
+
+@mcp.tool()
+def suggest_search_patterns(query: str) -> Dict[str, Any]:
+    """
+    Suggest appropriate glob patterns for a search query based on directory semantic content.
+
+    This tool helps LLMs choose the most relevant directories to search based on the
+    semantic description of each directory and the user's query.
+
+    Args:
+        query: The search query to analyze for pattern suggestions
+
+    Returns:
+        Dict containing suggested patterns and their semantic descriptions
+    """
+    # Get application context
+    ctx = mcp.get_context()
+    config = ctx.request_context.lifespan_context["config"]
+    logger = ctx.request_context.lifespan_context["logger"]
+
+    try:
+        suggestions = get_semantic_suggestions_for_query(config, query)
+        directories = config.get("directories", {})
+
+        # Build detailed response
+        response = {"query": query, "suggested_patterns": [], "all_directories": {}}
+
+        # Add suggested patterns with their semantic content
+        for suggestion in suggestions:
+            for dir_path, dir_config in directories.items():
+                dir_name = dir_path.split("/")[-1]
+                if dir_name and f"*/{dir_name}/*" == suggestion:
+                    response["suggested_patterns"].append(
+                        {
+                            "pattern": suggestion,
+                            "full_path": dir_path,
+                            "semantic_content": dir_config.get("semantic_content", "contains various documents"),
+                            "reason": f"Semantic content matches query terms: '{dir_config.get('semantic_content', 'various documents')}'",
+                        }
+                    )
+                    break
+
+        # Add all directories for reference
+        for dir_path, dir_config in directories.items():
+            dir_name = dir_path.split("/")[-1]
+            response["all_directories"][dir_path] = {
+                "semantic_content": dir_config.get("semantic_content", "contains various documents"),
+                "suggested_pattern": f"*/{dir_name}/*" if dir_name else "*",
+            }
+
+        logger.info(f"Generated {len(response['suggested_patterns'])} pattern suggestions for query: '{query}'")
+        return response
+
+    except Exception as e:
+        logger.error(f"Error generating pattern suggestions: {e}")
+        return {"query": query, "suggested_patterns": [], "all_directories": {}, "error": str(e)}
 
 
 def main():

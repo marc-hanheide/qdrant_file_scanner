@@ -2,17 +2,22 @@ directories:
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Microsoft Teams Chat Files":
     static_files: true  # Messages here are just archived, never change
     max_filesize: 10
+    semantic_content: "Files I have shared in chats"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Attachments":
     static_files: true  # Attachements here are just archived, never change
     max_filesize: 10  # Maximum file size in MB (0 = use global default)
+    semantic_content: "Selected Email attachments and shared files"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Reviews/ral":
     static_files: true  # Assume files don't change, skip hash checks for performance
+    semantic_content: "Academic papers and their reviews"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/letters":
     static_files: true  # Assume files don't change, skip hash checks for performance
+    semantic_content: "Official letters and correspondence, such as references and contracts"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-SharedLibraries-UniversityofLincoln/UoL Academic Board - General/2024-25":
     ignore_extensions: []  # Use default file_extensions
     max_filesize: 15  # Larger limit for official documents
     static_files: true  # Official documents are typically static, skip hash checks
+    semantic_content: "University Academic Board official documents and minutes"
   "/Users/mhanheide/Downloads":
     max_filesize: 50  # larger limit for local files
     static_files: false  # Downloads can change frequently, always check hashes
@@ -22,6 +27,7 @@ directories:
     ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations in emails
     static_files: true  # Emails here are just archived, never change
     max_filesize: 2  # Smaller limit for emails
+    semantic_content: "All emails I have received or sent"
     # static_files: false (default) - Desktop files can change, always check hashes
   # Add more directories as needed with their specific configurations
   # 
@@ -32,6 +38,9 @@ directories:
   #   This significantly speeds up reindexing on network filesystems but should only
   #   be used for directories containing files that rarely or never change (like
   #   archived documents, official records, etc.)
+  # - semantic_content: Optional semantic description of the directory's content
+  #   Used by LLMs to understand what type of documents are in this directory
+  #   Default: "contains various documents" if not specified
 
 # File extensions to process (global defaults)
 # Each directory can override these with ignore_extensions

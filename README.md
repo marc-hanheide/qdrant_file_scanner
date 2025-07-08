@@ -9,10 +9,11 @@ A Python tool that monitors directories for file changes and automatically index
 - **Vector Storage**: Generates embeddings and stores them in Qdrant vector database
 - **Change Detection**: Only reprocesses files when they actually change
 - **Static Files Optimization**: Skip hash checks for directories with static content to dramatically improve performance on network filesystems
+- **Semantic Directory Understanding**: Configure semantic descriptions for directories to help AI assistants understand content types
 - **Chunking**: Intelligently splits large documents into smaller chunks
 - **Configurable**: YAML-based configuration for all settings
 - **Search CLI**: Comprehensive command-line tool for searching and managing documents
-- **MCP Server**: Model Context Protocol server for integration with AI assistants
+- **MCP Server**: Model Context Protocol server for integration with AI assistants with intelligent directory targeting
 
 ## Installation
 
@@ -53,6 +54,7 @@ pip install -e .
 
 1. Copy and edit the `config.yaml` file:
    - Update `directories` to point to folders you want to monitor (see Directory Configuration below)
+   - Add `semantic_content` descriptions to help AI assistants understand directory content
    - Adjust `file_extensions` for the file types you need (global defaults)
    - Modify Qdrant settings if your server runs on different host/port
    - Set `delete_embeddings_on_file_deletion` to control deletion behavior:
@@ -63,35 +65,48 @@ pip install -e .
 
 ### Directory Configuration
 
-The tool supports two configuration formats for directories:
+Configure directories with per-directory settings that allow fine-grained control over processing:
 
-#### New Format (Recommended): Per-Directory Settings
 ```yaml
 directories:
   "/path/to/documents":
     ignore_extensions: []  # Use all global file_extensions
     max_filesize: 0  # Use global max_file_size_mb setting
     static_files: false  # Normal hash checking (default)
+    semantic_content: "Research papers and academic documents"
   "/path/to/emails":
     ignore_extensions: [".xlsx", ".pptx"]  # Skip spreadsheets and presentations
     max_filesize: 5  # Maximum 5MB per file in this directory
     static_files: false  # Email files can change, check hashes
+    semantic_content: "All emails I have received or sent"
   "/path/to/archive":
     ignore_extensions: []  # Process all supported types
     max_filesize: 20  # Allow larger archived documents
     static_files: true  # Archive files don't change, skip hash checks for speed
+    semantic_content: "Archived documents and reference materials"
   "/path/to/downloads":
     ignore_extensions: [".html", ".htm", ".rtf"]  # Skip web files and RTF
     max_filesize: 2  # Maximum 2MB per file in downloads (temporary files)
     # static_files: false (default) - Downloads change frequently
+    semantic_content: "Downloaded files and temporary documents"
 ```
 
 Each directory can specify:
 - `ignore_extensions`: Array of file extensions to skip for this directory
 - `max_filesize`: Maximum file size in MB for files in this directory (0 = use global default)
 - `static_files`: Skip hash checks for performance (true/false, default: false)
+- `semantic_content`: Optional semantic description of the directory's content (used by LLMs to understand what type of documents are stored here)
 - Extensions are applied on top of the global `file_extensions` list
 - Empty array for ignore_extensions means all global extensions will be processed
+
+#### Semantic Content
+
+The `semantic_content` field provides a human-readable description of what type of content is stored in each directory. This feature:
+
+- **Helps LLMs understand directory content**: When using the MCP server, AI assistants can intelligently choose appropriate directories for searches
+- **Improves search targeting**: Tools can suggest relevant glob patterns based on semantic descriptions
+- **Provides context for users**: Makes configuration self-documenting
+- **Defaults gracefully**: If not specified, defaults to "contains various documents"
 
 #### Static Files Optimization
 
@@ -102,16 +117,6 @@ The `static_files` option provides significant performance improvements for dire
 - **Performance Impact**: On network filesystems, enabling static files can reduce scan times by 90%+ for large directories
 - **Use Cases**: Archive directories, official documents, completed projects, reference materials
 - **Warning**: Only use `static_files: true` for directories where files genuinely don't change. If files do change, updates won't be detected.
-
-#### Legacy Format (Still Supported)
-```yaml
-directories:
-  - "/path/to/documents"
-  - "/path/to/emails"
-  - "/path/to/downloads"
-```
-
-This format will process all global `file_extensions` in all directories.
 
 ### Configuration Examples
 
@@ -124,22 +129,27 @@ directories:
     ignore_extensions: []  # Process all file types
     max_filesize: 20  # Allow large academic papers up to 20MB
     static_files: true  # Published papers don't change, optimize for speed
+    semantic_content: "Academic papers and research manuscripts"
   "/Users/username/Documents/Email_Attachments":
     ignore_extensions: [".html", ".htm"]  # Skip HTML emails
     max_filesize: 5  # Email attachments usually smaller
     static_files: false  # Email attachments might be updated
+    semantic_content: "Email attachments and shared files"
   "/Users/username/Documents/Archive":
     ignore_extensions: []  # Process all file types
     max_filesize: 50  # Large archived documents allowed
     static_files: true  # Archive files are static, optimize performance
+    semantic_content: "Archived documents and reference materials"
   "/Users/username/Downloads":
     ignore_extensions: [".html", ".htm", ".rtf", ".xlsx"]  # Skip web files and spreadsheets
     max_filesize: 2  # Downloads are often temporary, keep small
     static_files: false  # Downloads change frequently
+    semantic_content: "Downloaded files and temporary documents"
   "/Users/username/Desktop":
     ignore_extensions: [".pptx", ".xlsx"]  # Skip presentations and spreadsheets on desktop
     max_filesize: 10  # Medium size limit for desktop files
     static_files: false  # Working files on desktop change frequently
+    semantic_content: "Current working documents and desktop files"
 ```
 
 #### Example 2: Business Setup
@@ -148,26 +158,35 @@ directories:
   "/Users/username/OneDrive/Documents":
     ignore_extensions: []  # Process all document types
     max_filesize: 15  # Business documents can be larger
+    semantic_content: "Business documents and reports"
   "/Users/username/OneDrive/Shared":
     ignore_extensions: [".xlsx", ".pptx"]  # Skip large presentation files
     max_filesize: 8  # Shared files medium size
+    semantic_content: "Shared files and collaborative documents"
   "/Users/username/Downloads":
     ignore_extensions: [".html", ".htm", ".rtf"]  # Skip temporary web downloads
     max_filesize: 3  # Keep downloads small
+    semantic_content: "Downloaded files and temporary documents"
 ```
 
-#### Example 3: Selective Processing
+#### Example 3: Email and Communication Setup
 ```yaml
 directories:
-  "/Users/username/Important_Docs":
-    ignore_extensions: []  # Process everything important
-    max_filesize: 50  # Large limit for important documents
-  "/Users/username/Archive":
-    ignore_extensions: [".docx", ".xlsx", ".pptx"]  # Only text and PDFs in archive
-    max_filesize: 25  # Medium limit for archived content
-  "/Users/username/Temp":
-    ignore_extensions: [".pdf", ".docx", ".xlsx", ".pptx"]  # Only plain text in temp
-    max_filesize: 1  # Very small limit for temporary files
+  "/Users/username/Email_Archive":
+    ignore_extensions: [".xlsx", ".pptx"]  # Skip attachments that are spreadsheets/presentations
+    max_filesize: 5  # Email files are usually smaller
+    static_files: true  # Archived emails don't change
+    semantic_content: "All emails I have received or sent"
+  "/Users/username/Meeting_Notes":
+    ignore_extensions: []  # Process all file types
+    max_filesize: 10  # Meeting documents medium size
+    static_files: false  # Meeting notes get updated
+    semantic_content: "Meeting notes and minutes"
+  "/Users/username/Contracts":
+    ignore_extensions: []  # Process all document types
+    max_filesize: 25  # Legal documents can be large
+    static_files: true  # Contracts don't change once signed
+    semantic_content: "Legal contracts and agreements"
 ```
 
 The key benefits of per-directory configuration:
@@ -176,6 +195,8 @@ The key benefits of per-directory configuration:
 - **Control file sizes**: Set different size limits based on directory purpose
 - **Better organization**: Tailor processing to the content type of each directory
 - **Fine-grained control**: Different rules for different use cases
+- **Semantic understanding**: Help AI assistants understand what content is stored where
+- **Intelligent search**: Enable targeted searches based on directory content descriptions
 
 ## Usage
 
@@ -481,7 +502,9 @@ Searches for relevant documents in the RAG database using semantic similarity.
 - `query` (required): The search string used to find relevant documents
 - `number_docs` (optional, default: 10): Number of documents to return
 - `glob_pattern` (optional): Glob pattern to filter results by file path (case insensitive)
-  - Examples: `"*.pdf"`, `"*/emails/*"`, `"*report*"`
+  - Examples: `"*.pdf"`, `"*/specific_dir/*"`, `"*report*"`
+  - Use the `rag-directories://semantic` resource to understand which directories are available
+- `score_threshold` (optional, default: 0.0): Minimum similarity score for results (0.0-1.0)
 
 **Returns:**
 - Structured response with matching document chunks, including:
@@ -490,25 +513,70 @@ Searches for relevant documents in the RAG database using semantic similarity.
   - Chunk index within the document
   - Whether the source file has been deleted
 
+#### `suggest_search_patterns`
+Suggests appropriate glob patterns for a search query based on directory semantic content.
+
+**Parameters:**
+- `query` (required): The search query to analyze for pattern suggestions
+
+**Returns:**
+- Suggested patterns with their semantic descriptions and reasoning
+- All available directories with their semantic content
+
+#### `scan_file`
+Scans and indexes a specific file into the RAG database for ad-hoc indexing.
+
+**Parameters:**
+- `file_path` (required): Absolute path to the file to scan and index
+
+**Returns:**
+- Scan results including success status, number of chunks added, and file information
+
 **Example Usage:**
 ```python
 # Search for documents about "machine learning"
 result = rag_search("machine learning")
 
-# Search for PDF documents about "quarterly reports"
-result = rag_search("quarterly reports", number_docs=5, glob_pattern="*.pdf")
+# Get pattern suggestions for email search
+suggestions = suggest_search_patterns("email communication")
 
-# Search in email folder
-result = rag_search("project update", glob_pattern="*/emails/*")
+# Search using suggested patterns
+result = rag_search("project update", glob_pattern="*/Emails/*")
+
+# Index a specific file
+scan_result = scan_file("/path/to/document.pdf")
 ```
 
 ### Available Resources
 
 #### `rag-config://server`
-Provides the current RAG server configuration including Qdrant settings, embedding model configuration, monitored directories, and file extensions.
+Provides the current RAG server configuration including Qdrant settings, embedding model configuration, monitored directories with their semantic content, and file extensions.
 
 #### `rag-stats://database`
 Returns statistics about the RAG database including collection information, total vectors, vector size, embedding model, and number of indexed files.
+
+#### `rag-directories://semantic`
+**New Feature**: Provides semantic descriptions of all configured directories to help LLMs understand what type of content is stored in each directory. Includes:
+- Directory paths with their semantic content descriptions
+- Configuration details (file size limits, static files settings)
+- Glob pattern examples for targeting specific directories
+- Guidance for intelligent search pattern selection
+
+### Prompts
+
+The MCP server includes several pre-built prompts that leverage the semantic directory information:
+
+#### `find_files_about`
+Helps locate relevant documents about a specific topic using semantic directory understanding.
+
+#### `summarize_documents_about`
+Gathers and synthesizes information from multiple documents about a topic, with intelligent directory targeting.
+
+#### `find_emails_about`
+Finds emails based on subject or content, automatically identifying email directories from semantic descriptions.
+
+#### `comprehensive_search`
+Performs flexible searches with different strategies (broad, focused, deep) using semantic directory information.
 
 ### Configuration
 
