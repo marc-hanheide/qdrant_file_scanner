@@ -52,7 +52,7 @@ class TextExtractor:
         if not path.exists():
             self.logger.warning(f"File does not exist: {file_path}")
             return ""
-        
+
         if path.stat().st_size < 10:
             self.logger.warning(f"File is too small: {file_path}")
             return ""

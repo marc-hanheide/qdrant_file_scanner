@@ -292,11 +292,11 @@ class TestFileMonitorHandler:
         """Test that static_files configuration affects processing behavior"""
         mock_embedding_manager = Mock()
         mock_text_extractor = Mock()
-        
+
         # Configure mock to simulate file already indexed
         mock_embedding_manager._get_cached_file_hash.return_value = "existing_hash"
         mock_text_extractor.extract_text.return_value = "test content"
-        
+
         # Test with static_files = True
         static_config = {"ignore_extensions": [], "max_filesize": 0, "static_files": True}
         handler = FileMonitorHandler(
@@ -309,19 +309,20 @@ class TestFileMonitorHandler:
             directory_path="/test/static_dir",
             directory_config=static_config,
         )
-        
+
         # Mock get_file_hash to ensure it's not called in static mode
         # Also mock os.path.getsize since we're using fake file paths
-        with patch.object(handler, 'get_file_hash') as mock_get_hash, \
-             patch('os.path.getsize', return_value=100) as mock_getsize:
+        with patch.object(handler, "get_file_hash") as mock_get_hash, patch(
+            "os.path.getsize", return_value=100
+        ) as mock_getsize:
             handler.process_file("/test/static_dir/file.txt")
-            
+
             # get_file_hash should NOT be called for static files
             mock_get_hash.assert_not_called()
-            
+
             # Should check cached hash instead
             mock_embedding_manager._get_cached_file_hash.assert_called_with("/test/static_dir/file.txt")
-            
+
             # Should not proceed to indexing since file already exists
             mock_text_extractor.extract_text.assert_not_called()
 
@@ -329,10 +330,10 @@ class TestFileMonitorHandler:
         """Test that normal files still do hash checking"""
         mock_embedding_manager = Mock()
         mock_text_extractor = Mock()
-        
+
         # Configure mock
         mock_embedding_manager.is_file_unchanged.return_value = True  # File unchanged
-        
+
         # Test with static_files = False (normal mode)
         normal_config = {"ignore_extensions": [], "max_filesize": 0, "static_files": False}
         handler = FileMonitorHandler(
@@ -345,18 +346,19 @@ class TestFileMonitorHandler:
             directory_path="/test/normal_dir",
             directory_config=normal_config,
         )
-        
+
         # Mock get_file_hash to return a hash and mock os.path.getsize
-        with patch.object(handler, 'get_file_hash', return_value="file_hash") as mock_get_hash, \
-             patch('os.path.getsize', return_value=100) as mock_getsize:
+        with patch.object(handler, "get_file_hash", return_value="file_hash") as mock_get_hash, patch(
+            "os.path.getsize", return_value=100
+        ) as mock_getsize:
             handler.process_file("/test/normal_dir/file.txt")
-            
+
             # get_file_hash SHOULD be called for normal files
             mock_get_hash.assert_called_once_with("/test/normal_dir/file.txt")
-            
+
             # Should check if file is unchanged
             mock_embedding_manager.is_file_unchanged.assert_called_with("/test/normal_dir/file.txt", "file_hash")
-            
+
             # Should not extract text since file is unchanged
             mock_text_extractor.extract_text.assert_not_called()
 

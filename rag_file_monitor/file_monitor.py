@@ -189,13 +189,13 @@ class FileMonitorHandler(FileSystemEventHandler):
         try:
             # Check if directory is configured as static files (skip hash checks for performance)
             static_files = self.directory_config.get("static_files", False)
-            
+
             # Check minimum file size (skip very small files)
             file_size = os.path.getsize(file_path)
             if file_size < 10:
                 self.logger.info(f"File {file_path} is too small ({file_size} bytes), skipping")
                 return
-            
+
             current_hash = ""
             if not force_reindex and static_files:
                 # For static files, assume file hasn't changed and check if already indexed
@@ -203,7 +203,7 @@ class FileMonitorHandler(FileSystemEventHandler):
                 if stored_hash is not None:
                     self.logger.info(f"File {file_path} in static directory already indexed, skipping hash check")
                     return
-                
+
                 # File not indexed yet, use empty hash for indexing
                 self.logger.info(f"File {file_path} in static directory needs initial indexing (no hash check)")
 
@@ -212,7 +212,7 @@ class FileMonitorHandler(FileSystemEventHandler):
             if self.embedding_manager.is_file_unchanged(file_path, current_hash) and not force_reindex:
                 self.logger.info(f"File {file_path} has not changed, skipping indexing")
                 return
-                    
+
             self.logger.info(f"Document {file_path} needs indexing, extract text")
 
             # Extract text
@@ -414,7 +414,9 @@ class FileMonitor:
             if directory_config.get("static_files", False):
                 static_info = ", static_files=true(skip hash checks)"
 
-            self.logger.info(f"Monitoring directory: {directory} (extensions: {sorted(effective_extensions)}, {size_info}{static_info})")
+            self.logger.info(
+                f"Monitoring directory: {directory} (extensions: {sorted(effective_extensions)}, {size_info}{static_info})"
+            )
 
         if not self.observers:
             self.logger.error("No valid directories to monitor")
@@ -448,7 +450,10 @@ class FileMonitor:
                 "Using legacy directory configuration format. Consider upgrading to the new per-directory format."
             )
             # Convert to new format with empty configurations
-            return {directory: {"ignore_extensions": [], "max_filesize": 0, "static_files": False} for directory in directories_config}
+            return {
+                directory: {"ignore_extensions": [], "max_filesize": 0, "static_files": False}
+                for directory in directories_config
+            }
 
         # Handle new format (dictionary with per-directory settings)
         if isinstance(directories_config, dict):
