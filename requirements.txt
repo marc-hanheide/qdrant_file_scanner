@@ -15,3 +15,4 @@ click>=8.1.0
 tqdm>=4.66.0
 libmagic>=0.4
 mcp[cli]>=1.10.0
+torch>=1.13.0  # Required for cross-encoder models

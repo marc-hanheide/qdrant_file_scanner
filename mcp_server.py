@@ -38,6 +38,8 @@ class RAGSearchResult(BaseModel):
     chunk_index: int = Field(description="Index of the chunk within the document")
     is_deleted: bool = Field(description="Whether the source file has been deleted")
     deletion_timestamp: Optional[str] = Field(default=None, description="When the file was deleted, if applicable")
+    rerank_score: Optional[float] = Field(default=None, description="Re-ranking score if re-ranker is enabled")
+    original_score: Optional[float] = Field(default=None, description="Original embedding similarity score before re-ranking")
 
 
 class RAGSearchResponse(BaseModel):
@@ -152,6 +154,8 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: Optional[str] = 
                 chunk_index=result.get("chunk_index", 0),
                 is_deleted=result.get("is_deleted", False),
                 deletion_timestamp=result.get("deletion_timestamp"),
+                rerank_score=result.get("rerank_score"),
+                original_score=result.get("original_score"),
             )
             structured_results.append(structured_result)
 

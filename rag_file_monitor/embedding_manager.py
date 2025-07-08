@@ -39,6 +39,8 @@ except ImportError:
     MatchText = None
     PayloadSchemaType = None
 
+from .reranker import ReRanker
+
 # from ..memory_utils import ModelManager
 
 
@@ -83,6 +85,9 @@ class EmbeddingManager:
         self.hash_cache_ttl = config.get("memory", {}).get("hash_cache_ttl_seconds", 300)  # 5 minutes default
         self.hash_cache_lock = threading.Lock()  # Thread safety for cache operations
 
+        # Initialize re-ranker
+        self.reranker = ReRanker(config)
+        
         if not slim_mode:
             self.logger.info("Hash retrieval will be done on-demand with local caching")
             # Ensure payload index exists for efficient file_path queries
@@ -479,9 +484,12 @@ class EmbeddingManager:
     def search_similar(
         self, query: str, limit: int = 5, include_deleted: bool = True, glob_pattern: Optional[str] = None
     ) -> List[Dict]:
-        """Search for similar documents with optional glob pattern filtering"""
+        """Search for similar documents with optional glob pattern filtering and re-ranking"""
         try:
             query_embedding = self.generate_embeddings([query])[0]
+
+            # Calculate retrieval limit for re-ranking
+            retrieval_limit = self.reranker.calculate_retrieval_limit(limit)
 
             # Build search filter conditions using proper Qdrant filter format
             filter_conditions = []
@@ -504,10 +512,10 @@ class EmbeddingManager:
                     use_post_processing = True
 
             # Set search limit based on whether we need post-processing
-            effective_limit = limit
+            effective_limit = retrieval_limit
             if use_post_processing:
                 # Increase limit to account for post-processing filtering
-                effective_limit = min(limit * 100, 1000)
+                effective_limit = min(retrieval_limit * 100, 1000)
 
             # Combine all filter conditions
             search_filter = None
@@ -536,7 +544,7 @@ class EmbeddingManager:
                     result["deletion_timestamp"] = hit.payload.get("deletion_timestamp")
 
                 # Apply post-processing glob filter if needed
-                if glob_pattern:
+                if use_post_processing and glob_pattern:
                     file_path = result.get("file_path", "")
                     if not self._matches_glob_pattern(file_path, glob_pattern):
                         continue
@@ -544,10 +552,13 @@ class EmbeddingManager:
                 results.append(result)
 
                 # Stop once we have enough results (for post-processing case)
-                if len(results) >= limit:
+                if len(results) >= retrieval_limit:
                     break
 
-            return results
+            # Apply re-ranking if enabled
+            final_results = self.reranker.rerank_results(query, results, limit)
+            
+            return final_results
 
         except Exception as e:
             self.logger.error(f"Error searching: {str(e)}")
@@ -718,10 +729,13 @@ class EmbeddingManager:
                 self.unload_embedding_model()
                 model_unloaded = True
 
+        # Also check and unload re-ranker model
+        reranker_unloaded = self.reranker.check_and_unload_idle_model()
+
         # Also cleanup expired hash cache entries
         self._cleanup_expired_cache_entries()
 
-        return model_unloaded
+        return model_unloaded or reranker_unloaded
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get memory usage statistics"""

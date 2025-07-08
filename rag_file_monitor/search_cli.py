@@ -353,7 +353,10 @@ class RAGSearchCLI:
             output.append(f"{i:3}. {file_path}{status}")
 
             if verbose:
-                output.append(f"     Score: {score:.4f}")
+                score_display = f"Score: {score:.4f}"
+                if result.get("rerank_score") is not None:
+                    score_display += f" (re-ranked: {result.get('rerank_score'):.4f})"
+                output.append(f"     {score_display}")
                 output.append(f"     Chunk: {result.get('chunk_index', 0)}")
 
                 if is_deleted and result.get("deletion_timestamp"):
@@ -369,7 +372,10 @@ class RAGSearchCLI:
                 output.append("")  # Empty line for spacing
             else:
                 # Brief format - just show score
-                output.append(f"     Score: {score:.4f}")
+                score_display = f"Score: {score:.4f}"
+                if result.get("rerank_score") is not None:
+                    score_display += f" (re-ranked: {result.get('rerank_score'):.4f})"
+                output.append(f"     {score_display}")
 
         return "\n".join(output)
 
@@ -414,7 +420,10 @@ class RAGSearchCLI:
                 score = result.get("score", 0.0)
                 document = result.get("document", "")
 
-                output.append(f"\n### Chunk {chunk_index} (Similarity Score: {score:.4f})")
+                score_display = f"Similarity Score: {score:.4f}"
+                if result.get("rerank_score") is not None:
+                    score_display = f"Re-ranking Score: {result.get('rerank_score'):.4f} (Original: {score:.4f})"
+                output.append(f"\n### Chunk {chunk_index} ({score_display})")
 
                 if document:
                     # Format the document content as a markdown quote
