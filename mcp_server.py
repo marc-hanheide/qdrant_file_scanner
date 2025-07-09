@@ -116,13 +116,13 @@ mcp = FastMCP("rag_server", lifespan=app_lifespan)
 @mcp.tool()
 def rag_search(query: str, number_docs: int = 10, glob_pattern: str = "", score_threshold: float = 0.0) -> RAGSearchResponse:
     """
-    Search for relevant documents in the RAG database.
+    Searches for relevant indexed local documents, when asked to do so.
 
     This tool searches through indexed documents on this computer using semantic similarity
     to find the most relevant content chunks for a given query. Results are automatically
-    deduplicated to ensure no duplicate chunks are returned.
+    deduplicated and ranked according to their relevant to the query.
 
-    To understand what directories are available and their content types for more targeted searches,
+    To understand what directories are indexed and their content types for more targeted searches,
     use the rag_info tool first to get information about configured directories and their
     semantic content descriptions.
 
@@ -138,7 +138,7 @@ def rag_search(query: str, number_docs: int = 10, glob_pattern: str = "", score_
                          Higher values return only more relevant results, a value of 0.5 offers a good trade-off to start with
 
     Returns:
-        RAGSearchResponse: Structured response containing unique matching document chunks
+        RAGSearchResponse: Structured response containing ordered unique matching document chunks with similarity score
     """
     # Get application context
     ctx = mcp.get_context()
@@ -312,6 +312,29 @@ def get_database_stats() -> str:
 
     except Exception as e:
         return f"Error retrieving database statistics: {str(e)}"
+
+
+@mcp.prompt()
+def use_rag() -> str:
+    """Use the RAG database to search for information in indexed local documents.
+
+    This prompt provides a general overview of how to use the RAG database.
+    It can be used to understand the capabilities and available tools for searching documents.
+
+    Returns:
+        A string explaining how to use the RAG database
+    """
+    return """
+    You can use the RAG database to search for information in indexed local documents on this computer.
+
+    Use the rag_search tool to find relevant documents based on your semantic query.
+    The search will return the most relevant document chunks based on semantic similarity.
+    You can also use the rag_info tool to understand which directories are available and their semantic content.
+    the rag_info tool will help you choose appropriate glob patterns for targeted searches if those are requested.
+
+    Be econimic with your queries, as the system is designed to return the most relevant results based on your input. 
+    You can control how many results you want to receive by specifying the number_docs parameter in your query.
+    """
 
 
 @mcp.prompt()
