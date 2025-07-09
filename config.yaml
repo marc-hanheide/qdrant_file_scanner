@@ -112,6 +112,6 @@ memory:
 # Logging
 logging:
   mcp_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  level: "WARNING"  # DEBUG, INFO, WARNING, ERROR
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   file: "/tmp/rag_monitor.log"
   mcp_logfile: "/tmp/mcp_server.log"
