@@ -1,10 +1,13 @@
 directories:
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Meetings/transcripts":
+    static_files: true  # Transcripts are static, skip hash checks for performance
+    semantic_content: "Meeting transcripts and notes"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Microsoft Teams Chat Files":
     static_files: true  # Messages here are just archived, never change
     max_filesize: 10
     semantic_content: "Files I have shared in chats"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Attachments":
-    static_files: true  # Attachements here are just archived, never change
+    static_files: true  # Attachments here are just archived, never change
     max_filesize: 10  # Maximum file size in MB (0 = use global default)
     semantic_content: "Selected Email attachments and shared files"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Reviews/ral":
