@@ -10,6 +10,7 @@ import time
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from tqdm import tqdm
+import hashlib
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -47,7 +48,7 @@ from .reranker import ReRanker
 class EmbeddingManager:
     """Manage embeddings and Qdrant vector database operations"""
 
-    def __init__(self, config: Dict, slim_mode: bool = False):
+    def __init__(self, config: Dict):
         self.config = config
         self.logger = logging.getLogger(__name__)
 
@@ -88,10 +89,14 @@ class EmbeddingManager:
         # Initialize re-ranker
         self.reranker = ReRanker(config)
 
-        if not slim_mode:
-            self.logger.info("Hash retrieval will be done on-demand with local caching")
-            # Ensure payload index exists for efficient file_path queries
-            self._ensure_payload_index()
+        self.logger.info("Hash retrieval will be done on-demand with local caching")
+        # Ensure payload index exists for efficient file_path queries
+        self._ensure_payload_index(index_field="file_path")
+        self._ensure_payload_index(index_field="file_path_lower")
+        self._ensure_payload_index(index_field="chunk_hash")
+        self._ensure_payload_index(index_field="text_hash")
+        self._ensure_payload_index(index_field="file_hash")
+        self._ensure_payload_index(index_field="is_deleted")
 
     def _ensure_collection_exists(self):
         """Ensure the Qdrant collection exists"""
@@ -112,8 +117,8 @@ class EmbeddingManager:
             self.logger.error(f"Error ensuring collection exists: {str(e)}")
             raise
 
-    def _ensure_payload_index(self):
-        """Ensure payload index exists on file_path for efficient queries"""
+    def _ensure_payload_index(self, index_field: str = "file_path"):
+        """Ensure payload index exists on for efficient queries"""
         try:
             if PayloadSchemaType is None:
                 self.logger.warning("PayloadSchemaType not available, skipping index creation")
@@ -121,12 +126,12 @@ class EmbeddingManager:
 
             # Create payload index on file_path field for efficient querying
             self.client.create_payload_index(
-                collection_name=self.collection_name, field_name="file_path", field_schema=PayloadSchemaType.KEYWORD, wait=True
+                collection_name=self.collection_name, field_name=index_field, field_schema=PayloadSchemaType.KEYWORD, wait=True
             )
-            self.logger.info("Ensured payload index exists on file_path field")
+            self.logger.info(f"Ensured payload index exists on {index_field} field")
         except Exception as e:
             # Index might already exist, which is fine
-            self.logger.debug(f"Index creation info: {str(e)}")
+            self.logger.debug(f"Index {index_field} creation info: {str(e)}")
 
     def _get_file_hash_from_qdrant(self, file_path: str) -> Optional[str]:
         """Query Qdrant for the file hash of a specific file path"""
@@ -177,7 +182,6 @@ class EmbeddingManager:
 
     def get_file_hash(self, file_path: str) -> str:
         """Get MD5 hash of file for change detection using streaming"""
-        import hashlib
 
         try:
             hash_md5 = hashlib.md5()
@@ -278,9 +282,7 @@ class EmbeddingManager:
     def index_document(self, file_path: str, text_content: str, file_hash: str):
         """Index a document in Qdrant with memory optimization"""
         try:
-            # First, delete existing documents for this file (including those marked as deleted)
-            self.delete_document(file_path, force_delete=True)
-
+            text_hash = hashlib.md5(text_content.encode("utf-8"))
             # Chunk the text
             chunks = self.chunk_text(text_content)
             if not chunks:
@@ -317,9 +319,12 @@ class EmbeddingManager:
                 points = []
 
                 for i, (chunk, embedding) in enumerate(zip(chunk_batch, embeddings)):
-                    point_id = str(uuid.uuid4())
+                    # reate string to represent unique point ID, based on file_hash and chunk content
+                    id_str = (str(file_hash) + str(chunk)).encode("utf-8")
+                    point_id = str(uuid.uuid5(uuid.NAMESPACE_OID, id_str))  # Ensure unique ID based on file_hash and chunk content
                     chunk_index = batch_start + i
-
+                    chunk_hash = hashlib.sha512(chunk.encode("utf-8"))
+                    
                     payload = {
                         "document": chunk,
                         "metadata": {
@@ -331,8 +336,11 @@ class EmbeddingManager:
                             "is_deleted": False,  # Mark as active file
                         },
                         "file_path": file_path,
+                        "file_path_lower": file_path.lower(),  # Store lowercased path for case-insensitive queries
                         "file_hash": file_hash,
                         "chunk_index": chunk_index,
+                        "chunk_hash": chunk_hash.hexdigest(),
+                        "text_hash": text_hash.hexdigest(),
                         "timestamp": timestamp,
                         "file_size": len(text_content),
                         "is_deleted": False,  # Mark as active file
@@ -343,6 +351,8 @@ class EmbeddingManager:
 
                 # Upload batch to Qdrant
                 try:
+                    # Delete existing documents for this file (including those marked as deleted)
+                    self.delete_document(file_path, force_delete=True)
                     self.client.upsert(collection_name=self.collection_name, points=points)
                 except Exception as e:
                     error_msg = f"Failed to upsert points to Qdrant for {file_path}: {str(e)}"

@@ -227,7 +227,7 @@ class FileMonitorHandler(FileSystemEventHandler):
 
         except Exception as e:
             self.logger.error(f"Failed to process {file_path}: {str(e)}")
-            raise e  # Raise the exception to log it properly
+            #raise e  # Raise the exception to log it properly
             # Don't raise the exception to avoid crashing the monitor for single file failures
 
 

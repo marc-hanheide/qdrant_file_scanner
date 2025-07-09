@@ -1,7 +1,7 @@
 directories:
-  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Meetings/transcripts":
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Meetings":
     static_files: true  # Transcripts are static, skip hash checks for performance
-    semantic_content: "Meeting transcripts and notes"
+    semantic_content: "Meeting transcripts, minutes and briefing notes"
   "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Microsoft Teams Chat Files":
     static_files: true  # Messages here are just archived, never change
     max_filesize: 10
@@ -21,6 +21,13 @@ directories:
     max_filesize: 15  # Larger limit for official documents
     static_files: true  # Official documents are typically static, skip hash checks
     semantic_content: "University Academic Board official documents and minutes"
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/projects":
+    static_files: false  # Transcripts are static, skip hash checks for performance
+    semantic_content: "Documents related to my research and innovation projects, such as proposals, reports, and meeting notes"
+    max_filesize: 50  # Larger limit for project documents
+  "/Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/HR and H-S":
+    static_files: false  # Assume files don't change, skip hash checks for performance
+    semantic_content: "HR and recruitment documents and health and safety records"
   "/Users/mhanheide/Downloads":
     max_filesize: 50  # larger limit for local files
     static_files: false  # Downloads can change frequently, always check hashes

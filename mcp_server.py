@@ -87,7 +87,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
     try:
         # Initialize embedding manager
-        embedding_manager = EmbeddingManager(config, slim_mode=False)
+        embedding_manager = EmbeddingManager(config)
         logger.info("RAG system initialized successfully")
 
         # Pre-load models at startup for faster response times
