@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from tqdm import tqdm
 import hashlib
+import os
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -279,9 +280,15 @@ class EmbeddingManager:
             self.logger.error(f"Error generating embeddings: {str(e)}")
             return []
 
-    def index_document(self, file_path: str, text_content: str, file_hash: str):
+    def index_document(self, file_path: str, text_content: str, file_hash: str, file_created_time: Optional[str] = None, file_modified_time: Optional[str] = None):
         """Index a document in Qdrant with memory optimization"""
         try:
+            # Get file timestamps if not provided
+            if file_created_time is None or file_modified_time is None:
+                timestamps = self.get_file_timestamps(file_path)
+                file_created_time = file_created_time or timestamps["created_time"]
+                file_modified_time = file_modified_time or timestamps["modified_time"]
+            
             text_hash = hashlib.md5(text_content.encode("utf-8"))
             # Chunk the text
             chunks = self.chunk_text(text_content)
@@ -290,7 +297,6 @@ class EmbeddingManager:
                 return
             self.logger.info(f"Indexing document {file_path} with {len(chunks)} chunks")
 
-            timestamp = datetime.now().isoformat()
             # Process chunks in batches to reduce memory usage
             chunk_batch_size = self.config["memory"].get("chunk_batch_size", 50)  # Process chunks in smaller batches
             timestamp = datetime.now().isoformat()
@@ -344,6 +350,8 @@ class EmbeddingManager:
                             "timestamp": timestamp,
                             "file_size": len(text_content),
                             "is_deleted": False,  # Mark as active file
+                            "file_created_time": file_created_time,
+                            "file_modified_time": file_modified_time,
                         },
                         "file_path": file_path,
                         "file_path_lower": file_path.lower(),  # Store lowercased path for case-insensitive queries
@@ -354,6 +362,8 @@ class EmbeddingManager:
                         "timestamp": timestamp,
                         "file_size": len(text_content),
                         "is_deleted": False,  # Mark as active file
+                        "file_created_time": file_created_time,
+                        "file_modified_time": file_modified_time,
                     }
 
                     point = PointStruct(id=point_id, vector={self.vector_name: embedding}, payload=payload)
@@ -563,6 +573,8 @@ class EmbeddingManager:
                     "score": hit.score,
                     "chunk_index": hit.payload.get("chunk_index"),
                     "is_deleted": hit.payload.get("is_deleted", False),
+                    "file_created_time": hit.payload.get("file_created_time"),
+                    "file_modified_time": hit.payload.get("file_modified_time"),
                 }
 
                 if hit.payload.get("deletion_timestamp"):
@@ -655,6 +667,36 @@ class EmbeddingManager:
         except Exception as e:
             self.logger.error(f"Error getting deleted documents: {str(e)}")
             return []
+
+    def get_file_timestamps(self, file_path: str) -> Dict[str, Optional[str]]:
+        """Get file creation and modification timestamps"""
+        try:          
+            file_stats = os.stat(file_path)
+            
+            # Get modification time
+            modified_time = datetime.fromtimestamp(file_stats.st_mtime).isoformat()
+            
+            # Get creation time (different on different platforms)
+            created_time = None
+            if hasattr(file_stats, 'st_birthtime'):
+                # macOS and some BSD systems
+                created_time = datetime.fromtimestamp(file_stats.st_birthtime).isoformat()
+            elif hasattr(file_stats, 'st_ctime'):
+                # Unix systems - this is actually change time, not creation time
+                # but it's the closest we can get on most Unix systems
+                created_time = datetime.fromtimestamp(file_stats.st_ctime).isoformat()
+            
+            return {
+                "created_time": created_time,
+                "modified_time": modified_time
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Could not get file timestamps for {file_path}: {str(e)}")
+            return {
+                "created_time": None,
+                "modified_time": None
+            }
 
     def _get_embedding_model(self):
         """Lazy loading of embedding model with automatic unloading after idle time"""
