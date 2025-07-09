@@ -321,10 +321,12 @@ class EmbeddingManager:
                 for i, (chunk, embedding) in enumerate(zip(chunk_batch, embeddings)):
                     # reate string to represent unique point ID, based on file_hash and chunk content
                     id_str = (str(file_hash) + str(chunk)).encode("utf-8")
-                    point_id = str(uuid.uuid5(uuid.NAMESPACE_OID, id_str))  # Ensure unique ID based on file_hash and chunk content
+                    point_id = str(
+                        uuid.uuid5(uuid.NAMESPACE_OID, id_str)
+                    )  # Ensure unique ID based on file_hash and chunk content
                     chunk_index = batch_start + i
                     chunk_hash = hashlib.sha512(chunk.encode("utf-8"))
-                    
+
                     payload = {
                         "document": chunk,
                         "metadata": {
