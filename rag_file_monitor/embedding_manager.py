@@ -280,7 +280,14 @@ class EmbeddingManager:
             self.logger.error(f"Error generating embeddings: {str(e)}")
             return []
 
-    def index_document(self, file_path: str, text_content: str, file_hash: str, file_created_time: Optional[str] = None, file_modified_time: Optional[str] = None):
+    def index_document(
+        self,
+        file_path: str,
+        text_content: str,
+        file_hash: str,
+        file_created_time: Optional[str] = None,
+        file_modified_time: Optional[str] = None,
+    ):
         """Index a document in Qdrant with memory optimization"""
         try:
             # Get file timestamps if not provided
@@ -288,7 +295,7 @@ class EmbeddingManager:
                 timestamps = self.get_file_timestamps(file_path)
                 file_created_time = file_created_time or timestamps["created_time"]
                 file_modified_time = file_modified_time or timestamps["modified_time"]
-            
+
             text_hash = hashlib.md5(text_content.encode("utf-8"))
             # Chunk the text
             chunks = self.chunk_text(text_content)
@@ -670,33 +677,27 @@ class EmbeddingManager:
 
     def get_file_timestamps(self, file_path: str) -> Dict[str, Optional[str]]:
         """Get file creation and modification timestamps"""
-        try:          
+        try:
             file_stats = os.stat(file_path)
-            
+
             # Get modification time
             modified_time = datetime.fromtimestamp(file_stats.st_mtime).isoformat()
-            
+
             # Get creation time (different on different platforms)
             created_time = None
-            if hasattr(file_stats, 'st_birthtime'):
+            if hasattr(file_stats, "st_birthtime"):
                 # macOS and some BSD systems
                 created_time = datetime.fromtimestamp(file_stats.st_birthtime).isoformat()
-            elif hasattr(file_stats, 'st_ctime'):
+            elif hasattr(file_stats, "st_ctime"):
                 # Unix systems - this is actually change time, not creation time
                 # but it's the closest we can get on most Unix systems
                 created_time = datetime.fromtimestamp(file_stats.st_ctime).isoformat()
-            
-            return {
-                "created_time": created_time,
-                "modified_time": modified_time
-            }
-            
+
+            return {"created_time": created_time, "modified_time": modified_time}
+
         except Exception as e:
             self.logger.warning(f"Could not get file timestamps for {file_path}: {str(e)}")
-            return {
-                "created_time": None,
-                "modified_time": None
-            }
+            return {"created_time": None, "modified_time": None}
 
     def _get_embedding_model(self):
         """Lazy loading of embedding model with automatic unloading after idle time"""
