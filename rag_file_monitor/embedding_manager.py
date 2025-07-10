@@ -10,6 +10,8 @@ import time
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from tqdm import tqdm
+import hashlib
+import os
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -47,7 +49,7 @@ from .reranker import ReRanker
 class EmbeddingManager:
     """Manage embeddings and Qdrant vector database operations"""
 
-    def __init__(self, config: Dict, slim_mode: bool = False):
+    def __init__(self, config: Dict):
         self.config = config
         self.logger = logging.getLogger(__name__)
 
@@ -88,10 +90,14 @@ class EmbeddingManager:
         # Initialize re-ranker
         self.reranker = ReRanker(config)
 
-        if not slim_mode:
-            self.logger.info("Hash retrieval will be done on-demand with local caching")
-            # Ensure payload index exists for efficient file_path queries
-            self._ensure_payload_index()
+        self.logger.info("Hash retrieval will be done on-demand with local caching")
+        # Ensure payload index exists for efficient file_path queries
+        self._ensure_payload_index(index_field="file_path")
+        self._ensure_payload_index(index_field="file_path_lower")
+        self._ensure_payload_index(index_field="chunk_hash")
+        self._ensure_payload_index(index_field="text_hash")
+        self._ensure_payload_index(index_field="file_hash")
+        self._ensure_payload_index(index_field="is_deleted")
 
     def _ensure_collection_exists(self):
         """Ensure the Qdrant collection exists"""
@@ -112,8 +118,8 @@ class EmbeddingManager:
             self.logger.error(f"Error ensuring collection exists: {str(e)}")
             raise
 
-    def _ensure_payload_index(self):
-        """Ensure payload index exists on file_path for efficient queries"""
+    def _ensure_payload_index(self, index_field: str = "file_path"):
+        """Ensure payload index exists on for efficient queries"""
         try:
             if PayloadSchemaType is None:
                 self.logger.warning("PayloadSchemaType not available, skipping index creation")
@@ -121,12 +127,12 @@ class EmbeddingManager:
 
             # Create payload index on file_path field for efficient querying
             self.client.create_payload_index(
-                collection_name=self.collection_name, field_name="file_path", field_schema=PayloadSchemaType.KEYWORD, wait=True
+                collection_name=self.collection_name, field_name=index_field, field_schema=PayloadSchemaType.KEYWORD, wait=True
             )
-            self.logger.info("Ensured payload index exists on file_path field")
+            self.logger.info(f"Ensured payload index exists on {index_field} field")
         except Exception as e:
             # Index might already exist, which is fine
-            self.logger.debug(f"Index creation info: {str(e)}")
+            self.logger.debug(f"Index {index_field} creation info: {str(e)}")
 
     def _get_file_hash_from_qdrant(self, file_path: str) -> Optional[str]:
         """Query Qdrant for the file hash of a specific file path"""
@@ -177,7 +183,6 @@ class EmbeddingManager:
 
     def get_file_hash(self, file_path: str) -> str:
         """Get MD5 hash of file for change detection using streaming"""
-        import hashlib
 
         try:
             hash_md5 = hashlib.md5()
@@ -275,12 +280,23 @@ class EmbeddingManager:
             self.logger.error(f"Error generating embeddings: {str(e)}")
             return []
 
-    def index_document(self, file_path: str, text_content: str, file_hash: str):
+    def index_document(
+        self,
+        file_path: str,
+        text_content: str,
+        file_hash: str,
+        file_created_time: Optional[str] = None,
+        file_modified_time: Optional[str] = None,
+    ):
         """Index a document in Qdrant with memory optimization"""
         try:
-            # First, delete existing documents for this file (including those marked as deleted)
-            self.delete_document(file_path, force_delete=True)
+            # Get file timestamps if not provided
+            if file_created_time is None or file_modified_time is None:
+                timestamps = self.get_file_timestamps(file_path)
+                file_created_time = file_created_time or timestamps["created_time"]
+                file_modified_time = file_modified_time or timestamps["modified_time"]
 
+            text_hash = hashlib.md5(text_content.encode("utf-8"))
             # Chunk the text
             chunks = self.chunk_text(text_content)
             if not chunks:
@@ -288,7 +304,6 @@ class EmbeddingManager:
                 return
             self.logger.info(f"Indexing document {file_path} with {len(chunks)} chunks")
 
-            timestamp = datetime.now().isoformat()
             # Process chunks in batches to reduce memory usage
             chunk_batch_size = self.config["memory"].get("chunk_batch_size", 50)  # Process chunks in smaller batches
             timestamp = datetime.now().isoformat()
@@ -317,7 +332,20 @@ class EmbeddingManager:
                 points = []
 
                 for i, (chunk, embedding) in enumerate(zip(chunk_batch, embeddings)):
-                    point_id = str(uuid.uuid4())
+                    # reate string to represent unique point ID, based on file_hash and chunk content
+                    chunk_hash = hashlib.sha512(chunk.encode("utf-8"))
+
+                    id_str = f"""
+                    file_path: {file_path}
+                    file_hash: {str(file_hash)}
+                    chunk_hash: {chunk_hash.hexdigest()}
+                    """.encode(
+                        "utf-8"
+                    )
+
+                    point_id = str(
+                        uuid.uuid5(uuid.NAMESPACE_OID, id_str)
+                    )  # Ensure unique ID based on file_hash, file_path, and chunk content
                     chunk_index = batch_start + i
 
                     payload = {
@@ -329,13 +357,20 @@ class EmbeddingManager:
                             "timestamp": timestamp,
                             "file_size": len(text_content),
                             "is_deleted": False,  # Mark as active file
+                            "file_created_time": file_created_time,
+                            "file_modified_time": file_modified_time,
                         },
                         "file_path": file_path,
+                        "file_path_lower": file_path.lower(),  # Store lowercased path for case-insensitive queries
                         "file_hash": file_hash,
                         "chunk_index": chunk_index,
+                        "chunk_hash": chunk_hash.hexdigest(),
+                        "text_hash": text_hash.hexdigest(),
                         "timestamp": timestamp,
                         "file_size": len(text_content),
                         "is_deleted": False,  # Mark as active file
+                        "file_created_time": file_created_time,
+                        "file_modified_time": file_modified_time,
                     }
 
                     point = PointStruct(id=point_id, vector={self.vector_name: embedding}, payload=payload)
@@ -343,6 +378,8 @@ class EmbeddingManager:
 
                 # Upload batch to Qdrant
                 try:
+                    # Delete existing documents for this file (including those marked as deleted)
+                    self.delete_document(file_path, force_delete=True)
                     self.client.upsert(collection_name=self.collection_name, points=points)
                 except Exception as e:
                     error_msg = f"Failed to upsert points to Qdrant for {file_path}: {str(e)}"
@@ -440,36 +477,41 @@ class EmbeddingManager:
         Convert glob pattern to Qdrant filter conditions.
 
         This method handles common glob patterns and converts them to efficient Qdrant filters:
-        - *.ext -> files ending with .ext
-        - *keyword* -> files containing keyword
-        - prefix* -> files starting with prefix
+        - *.ext -> files ending with .ext (case-sensitive)
+        - *keyword* -> files containing keyword (case-sensitive)
+        - prefix* -> files starting with prefix (case-sensitive)
         - Complex patterns fall back to post-processing
         """
         if not glob_pattern:
             return []
 
         filter_conditions = []
-        pattern_lower = glob_pattern.lower()
 
         try:
             # Handle file extension patterns like "*.pdf", "*.txt"
-            if pattern_lower.startswith("*.") and "*" not in pattern_lower[2:]:
-                extension = pattern_lower[1:]  # Include the dot
+            if glob_pattern.startswith("*.") and "*" not in glob_pattern[2:]:
+                extension = glob_pattern[1:]  # Include the dot
                 # Use MatchText to find files ending with the extension
                 if MatchText is not None:
-                    filter_conditions.append(FieldCondition(key="file_path", match=MatchText(text=extension)))
+                    caseinsensitive_filter = Filter(
+                        should=[
+                            FieldCondition(key="file_path", match=MatchText(text=extension.lower())),
+                            FieldCondition(key="file_path", match=MatchText(text=extension.upper())),
+                        ]
+                    )
+                    filter_conditions.append(caseinsensitive_filter)
                 return filter_conditions
 
-            # Handle simple prefix patterns like "report*"
-            elif pattern_lower.endswith("*") and "*" not in pattern_lower[:-1]:
-                prefix = pattern_lower[:-1]
+            # Handle simple prefix patterns like "report*" (case-sensitive)
+            elif glob_pattern.endswith("*") and "*" not in glob_pattern[:-1]:
+                prefix = glob_pattern[:-1]
                 if MatchText is not None:
                     filter_conditions.append(FieldCondition(key="file_path", match=MatchText(text=prefix)))
                 return filter_conditions
 
-            # Handle simple contains patterns like "*keyword*"
-            elif pattern_lower.startswith("*") and pattern_lower.endswith("*") and pattern_lower.count("*") == 2:
-                keyword = pattern_lower[1:-1]
+            # Handle simple contains patterns like "*keyword*" (case-sensitive)
+            elif glob_pattern.startswith("*") and glob_pattern.endswith("*") and glob_pattern.count("*") == 2:
+                keyword = glob_pattern[1:-1]
                 if keyword and MatchText is not None:
                     filter_conditions.append(FieldCondition(key="file_path", match=MatchText(text=keyword)))
                 return filter_conditions
@@ -538,6 +580,8 @@ class EmbeddingManager:
                     "score": hit.score,
                     "chunk_index": hit.payload.get("chunk_index"),
                     "is_deleted": hit.payload.get("is_deleted", False),
+                    "file_created_time": hit.payload.get("file_created_time"),
+                    "file_modified_time": hit.payload.get("file_modified_time"),
                 }
 
                 if hit.payload.get("deletion_timestamp"):
@@ -568,16 +612,19 @@ class EmbeddingManager:
         """
         Check if a file path matches the given glob pattern.
         This is used for complex patterns that can't be handled by Qdrant filters.
+        Uses case-sensitive matching.
         """
         if not file_path or not glob_pattern:
             return True
 
-        # Case insensitive matching
-        file_path_lower = file_path.lower()
-        glob_pattern_lower = glob_pattern.lower()
+        # Special handling for file extension patterns to make them case-insensitive
+        if glob_pattern.startswith("*.") and "*" not in glob_pattern[2:]:
+            # This is a simple file extension pattern like "*.pdf"
+            extension = glob_pattern[1:]  # Remove the * but keep the dot
+            return file_path.lower().endswith(extension.lower())
 
-        # Use fnmatch for the actual pattern matching
-        return fnmatch.fnmatch(file_path_lower, glob_pattern_lower)
+        # For other patterns, use case-sensitive matching
+        return fnmatch.fnmatch(file_path, glob_pattern)
 
     def count_documents(self) -> int:
         """Count total documents in the collection"""
@@ -627,6 +674,30 @@ class EmbeddingManager:
         except Exception as e:
             self.logger.error(f"Error getting deleted documents: {str(e)}")
             return []
+
+    def get_file_timestamps(self, file_path: str) -> Dict[str, Optional[str]]:
+        """Get file creation and modification timestamps"""
+        try:
+            file_stats = os.stat(file_path)
+
+            # Get modification time
+            modified_time = datetime.fromtimestamp(file_stats.st_mtime).isoformat()
+
+            # Get creation time (different on different platforms)
+            created_time = None
+            if hasattr(file_stats, "st_birthtime"):
+                # macOS and some BSD systems
+                created_time = datetime.fromtimestamp(file_stats.st_birthtime).isoformat()
+            elif hasattr(file_stats, "st_ctime"):
+                # Unix systems - this is actually change time, not creation time
+                # but it's the closest we can get on most Unix systems
+                created_time = datetime.fromtimestamp(file_stats.st_ctime).isoformat()
+
+            return {"created_time": created_time, "modified_time": modified_time}
+
+        except Exception as e:
+            self.logger.warning(f"Could not get file timestamps for {file_path}: {str(e)}")
+            return {"created_time": None, "modified_time": None}
 
     def _get_embedding_model(self):
         """Lazy loading of embedding model with automatic unloading after idle time"""

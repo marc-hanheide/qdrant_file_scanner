@@ -64,7 +64,7 @@ class RAGSearchCLI:
         self.logger = logging.getLogger(__name__)
 
         # Initialize embedding manager
-        self.embedding_manager = EmbeddingManager(self.config, slim_mode=False)
+        self.embedding_manager = EmbeddingManager(self.config)
         self.text_extractor = TextExtractor()
 
     def search_by_query(

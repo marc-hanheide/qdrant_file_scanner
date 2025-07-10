@@ -208,7 +208,7 @@ When adding new tests:
 
 3. **Model download in tests**
    - Some tests may download ML models on first run
-   - Use `slim_mode=True` in tests to avoid this
+   - Tests should use mocks to avoid actual model downloads
 
 4. **Qdrant connection errors**
    - Tests use mocks by default

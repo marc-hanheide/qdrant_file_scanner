@@ -8,7 +8,7 @@ It implements a search tool that allows querying documents indexed in Qdrant.
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -37,9 +37,9 @@ class RAGSearchResult(BaseModel):
     score: float = Field(description="Similarity score (0-1, higher is better)")
     chunk_index: int = Field(description="Index of the chunk within the document")
     is_deleted: bool = Field(description="Whether the source file has been deleted")
-    deletion_timestamp: Optional[str] = Field(default=None, description="When the file was deleted, if applicable")
-    rerank_score: Optional[float] = Field(default=None, description="Re-ranking score if re-ranker is enabled")
-    original_score: Optional[float] = Field(default=None, description="Original embedding similarity score before re-ranking")
+    deletion_timestamp: str | None = Field(default=None, description="When the file was deleted, if applicable")
+    rerank_score: float | None = Field(default=None, description="Re-ranking score if re-ranker is enabled")
+    original_score: float | None = Field(default=None, description="Original embedding similarity score before re-ranking")
 
 
 class RAGSearchResponse(BaseModel):
@@ -48,7 +48,7 @@ class RAGSearchResponse(BaseModel):
     results: List[RAGSearchResult] = Field(description="List of unique matching document chunks (deduplicated)")
     query: str = Field(description="The original search query")
     total_results: int = Field(description="Number of unique results returned")
-    filtered_by_pattern: Optional[str] = Field(default=None, description="Glob pattern used for filtering, if any")
+    filtered_by_pattern: str | None = Field(default=None, description="Glob pattern used for filtering, if any")
 
 
 @asynccontextmanager
@@ -87,7 +87,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
     try:
         # Initialize embedding manager
-        embedding_manager = EmbeddingManager(config, slim_mode=False)
+        embedding_manager = EmbeddingManager(config)
         logger.info("RAG system initialized successfully")
 
         # Pre-load models at startup for faster response times
@@ -110,36 +110,42 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
 
 # Create MCP server
-mcp = FastMCP("RAG Document Search", lifespan=app_lifespan)
+mcp = FastMCP("rag_server", lifespan=app_lifespan)
 
 
 @mcp.tool()
-def rag_search(
-    query: str, number_docs: int = 10, glob_pattern: Optional[str] = None, score_threshold: float = 0.0
-) -> RAGSearchResponse:
+def rag_search(query: str, number_docs: int = 10, glob_pattern: str = "", score_threshold: float = 0.0) -> RAGSearchResponse:
     """
-    Search for relevant documents in the RAG database.
+    Searches for relevant indexed local documents, when asked to do so.
 
     This tool searches through indexed documents on this computer using semantic similarity
     to find the most relevant content chunks for a given query. Results are automatically
-    deduplicated to ensure no duplicate chunks are returned.
+    deduplicated and ranked according to their relevant to the query.
+
+    To understand what directories are indexed and their content types for more targeted searches,
+    use the rag_info tool first to get information about configured directories and their
+    semantic content descriptions.
 
     Args:
         query: The search string used to find relevant documents
         number_docs: The maximum number of documents to return (default: 10)
-        glob_pattern: Optional glob pattern to filter results by file path (case insensitive)
-                      Examples: "*.pdf", "*/emails/*", "*report*"
+        glob_pattern: An optional glob pattern to filter results by file path (case insensitive)
+                      Left empty by default means no filtering by glob pattern.
+                      Examples: "*.pdf", "*/specific_dir/*", "*report*"
+                      Use the rag_info tool to understand which directories are available
+                      and their content types for targeted searches if you want to limit the search scope
         score_threshold: Minimum similarity score for results to be included (0.0-1.0, default: 0.0)
                          Higher values return only more relevant results, a value of 0.5 offers a good trade-off to start with
 
     Returns:
-        RAGSearchResponse: Structured response containing unique matching document chunks
+        RAGSearchResponse: Structured response containing ordered unique matching document chunks with similarity score
     """
     # Get application context
     ctx = mcp.get_context()
     embedding_manager = ctx.request_context.lifespan_context["embedding_manager"]
     logger = ctx.request_context.lifespan_context["logger"]
-
+    if glob_pattern == "":
+        glob_pattern = None
     try:
         logger.info(
             f"RAG search query: '{query}' (limit: {number_docs}, pattern: {glob_pattern}, threshold: {score_threshold})"
@@ -309,6 +315,29 @@ def get_database_stats() -> str:
 
 
 @mcp.prompt()
+def use_rag() -> str:
+    """Use the RAG database to search for information in indexed local documents.
+
+    This prompt provides a general overview of how to use the RAG database.
+    It can be used to understand the capabilities and available tools for searching documents.
+
+    Returns:
+        A string explaining how to use the RAG database
+    """
+    return """
+    You can use the RAG database to search for information in indexed local documents on this computer.
+
+    Use the rag_search tool to find relevant documents based on your semantic query.
+    The search will return the most relevant document chunks based on semantic similarity.
+    You can also use the rag_info tool to understand which directories are available and their semantic content.
+    the rag_info tool will help you choose appropriate glob patterns for targeted searches if those are requested.
+
+    Be econimic with your queries, as the system is designed to return the most relevant results based on your input. 
+    You can control how many results you want to receive by specifying the number_docs parameter in your query.
+    """
+
+
+@mcp.prompt()
 def find_files_about(topic: str) -> str:
     """Find specific files about a particular topic or content.
 
@@ -319,6 +348,9 @@ def find_files_about(topic: str) -> str:
         topic: What you're looking for (e.g., "machine learning papers", "budget reports", "meeting notes")
     """
     return f"""I need to find files about "{topic}". Please use the rag_search tool to search for relevant documents.
+
+You can use the rag_info tool to understand which directories are configured 
+and their semantic content. This will help you choose appropriate glob patterns for targeted searches if those are needed.
 
 After finding the results:
 1. List the most relevant files with their paths
@@ -339,16 +371,16 @@ def summarize_documents_about(topic: str, file_pattern: str = None) -> str:
 
     Args:
         topic: The subject to summarize (e.g., "quarterly financial performance", "project status updates")
-        file_pattern: Optional glob pattern to filter specific file types or locations
+        file_pattern: An optional glob pattern to filter specific file types or locations
     """
     pattern_instruction = f"\nUse glob pattern: {file_pattern}" if file_pattern else ""
 
     return f"""I need a comprehensive summary about "{topic}" from available documents.{pattern_instruction}
 
 Please follow this process:
-1. First, use rag_search to find relevant documents about "{topic}"
+1. Use rag_search to find relevant documents about "{topic}" with appropriate glob patterns
 2. Identify the most relevant and recent documents
-3. For key documents, read their full content to get complete context if that is required
+3. For key documents, read their full content to get complete context if required
 4. Synthesize the information into a structured summary covering:
    - Key findings or main points
    - Important dates and timelines
@@ -363,30 +395,29 @@ Search query: {topic}"""
 def find_emails_about(subject_or_content: str, date_range: str = None) -> str:
     """Find specific emails based on subject or content.
 
-    This prompt helps locate emails which are stored as HTML files in OneDrive.
+    This prompt helps locate emails stored in configured directories.
     Use this when you need to find email communications about specific topics.
 
     Args:
         subject_or_content: What to search for in emails (subject line or content)
-        date_range: Optional date range (e.g., "last month", "2024", "January 2025")
+        date_range: An optional date range (e.g., "last month", "2024", "January 2025")
     """
-    email_pattern = "*/OneDrive-UniversityofLincoln/Emails/*/*.html"
     date_instruction = f" from {date_range}" if date_range else ""
 
     return f"""I need to find emails about "{subject_or_content}"{date_instruction}.
 
 Please search for emails using these steps:
-1. Use rag_search with glob_pattern="{email_pattern}" to find relevant emails
-2. Look for emails matching the subject or containing the specified content
-3. Present the results showing:
+1. First, use the rag_info tool to identify directories containing emails and correspondence
+2. Look for directories with semantic content related to emails, correspondence, or messages  
+3. Use rag_search with appropriate glob patterns based on the email directories found
+4. Look for emails matching the subject or containing the specified content
+5. Present the results showing:
    - Email subject/title (from filename or content)
    - Date information (if available)
    - Sender/recipient information (if found in content)
    - Brief preview of relevant content
    - Full file path for reference
 
-Search in: /Users/mhanheide/Library/CloudStorage/OneDrive-UniversityofLincoln/Emails
-File type: all stoared email files end in `.html`
 Search query: {subject_or_content}"""
 
 
@@ -427,13 +458,13 @@ Search Strategy: {search_strategy}
 {strategy_instruction}
 
 Please help me find and organize information by:
-1. Using rag_search with appropriate keywords and patterns
-2. Identifying the most relevant documents
-3. Organizing results by relevance and type
-4. Providing actionable next steps or direct links where possible
+1. Using the rag_info tool to understand directory content types
+2. Using rag_search with appropriate keywords and patterns
+3. Identifying the most relevant documents
+4. Organizing results by relevance and type
+5. Providing actionable next steps or direct links where possible
 
-For emails, remember to use the pattern: */OneDrive-UniversityofLincoln/Emails/*/*.html
-For specific file types, use appropriate glob patterns
+Use the directory information from rag_info tool to target your searches effectively.
 
 Search query: {query}"""
 
@@ -521,6 +552,102 @@ def scan_file(file_path: str) -> Dict[str, Any]:
             "file_path": (
                 file_path_str if "file_path_str" in locals() else str(file_path) if "file_path" in locals() else "unknown"
             ),
+        }
+
+
+def get_directory_semantic_content(config: Dict[str, Any], directory_path: str) -> str:
+    """
+    Get the semantic content description for a specific directory.
+
+    Args:
+        config: The configuration dictionary
+        directory_path: The directory path to look up
+
+    Returns:
+        The semantic content description, or default if not found
+    """
+    directories = config.get("directories", {})
+
+    # Try exact match first
+    if directory_path in directories:
+        return directories[directory_path].get("semantic_content", "contains various documents")
+
+    # Try partial match for subdirectories
+    for dir_path, dir_config in directories.items():
+        if directory_path.startswith(dir_path):
+            return dir_config.get("semantic_content", "contains various documents")
+
+    return "contains various documents"
+
+
+@mcp.tool()
+def rag_info() -> Dict[str, Any]:
+    """
+    Get information about available directories, their semantic content, and indexed documents.
+
+    This tool provides consolidated information about the RAG database including:
+    - All configured directories and their semantic content descriptions
+    - Total number of indexed documents and chunks
+    - Available file types and patterns for filtering
+    - Usage guidance for effective searching
+
+    Use this tool to understand what content is available before performing searches with rag_search.
+
+    Returns:
+        Dict containing directory information, document counts, and usage guidance
+    """
+    # Get application context
+    ctx = mcp.get_context()
+    config = ctx.request_context.lifespan_context["config"]
+    logger = ctx.request_context.lifespan_context["logger"]
+
+    try:
+        embedding_manager = ctx.request_context.lifespan_context["embedding_manager"]
+        directories = config.get("directories", {})
+
+        # Get document count from database
+        try:
+            collection_info = embedding_manager.client.get_collection(collection_name=embedding_manager.collection_name)
+            total_documents = embedding_manager.count_documents()
+            total_chunks = collection_info.points_count
+        except Exception as e:
+            logger.warning(f"Could not retrieve document statistics: {e}")
+            total_documents = "unavailable"
+            total_chunks = "unavailable"
+
+        # Build comprehensive response
+        response = {
+            "directories": {},
+            "total_directories": len(directories),
+            "database_stats": {"total_documents": total_documents, "total_chunks": total_chunks},
+            "usage_notes": {
+                "glob_patterns": "Use patterns like '/dirname1/dirname2/*' to search specific directories, '*.pdf' for file types",
+                "semantic_content": "Each directory has semantic descriptions to help you choose relevant sources",
+                "combining_filters": "You can combine directory and file type patterns like '/research/*.pdf'",
+            },
+        }
+
+        # Add directory information
+        for dir_path, dir_config in directories.items():
+            dir_name = dir_path.split("/")[-1] or "root"
+            response["directories"][dir_path] = {
+                "directory_name": dir_name,
+                "semantic_content": dir_config.get("semantic_content", "contains various documents"),
+                "suggested_pattern": f"{dir_path}/*" if dir_name != "root" else "*",
+                "full_path": dir_path,
+            }
+
+        logger.info(f"Provided directory information for {len(directories)} configured directories")
+        return response
+
+    except Exception as e:
+        logger.error(f"Error getting RAG info: {e}")
+        return {
+            "directories": {},
+            "total_directories": 0,
+            "database_stats": {"total_documents": "error", "total_chunks": "error"},
+            "error": str(e),
+            "usage_notes": {"error": "Failed to load directory information"},
         }
 
 
